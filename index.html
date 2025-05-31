@@ -1,0 +1,1566 @@
+<!DOCTYPE html>
+<html lang="es" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MindGuard - Análisis MBI y Clustering</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        /* Custom scrollbar for webkit browsers */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f0f9ff; /* sky-50 */
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #7dd3fc; /* sky-300 */
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #38bdf8; /* sky-400 */
+        }
+        /* Custom styles for active nav link */
+        .nav-link-active {
+            color: #0284c7; /* sky-600 */
+            font-weight: 600;
+            background-color: #e0f2fe; /* sky-100 */
+        }
+        /* Custom styles for accordion */
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .accordion-content.open {
+            max-height: 2000px; /* Increased max-height for potentially longer content */
+        }
+        /* Toast notification styles */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 1rem 1.5rem;
+            border-radius: 0.5rem;
+            color: white;
+            font-weight: 500;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 1000;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .toast-success { background-color: #10b981; /* Emerald-500 */ }
+        .toast-error { background-color: #f43f5e; /* Rose-500 */ }
+        .toast-warning { background-color: #f59e0b; /* Amber-500 */ }
+        .toast-info { background-color: #3b82f6; /* Blue-500 */ }
+
+        /* Chart container responsive height */
+        .chart-container {
+            position: relative;
+            height: 350px; /* Default height */
+            width: 100%;
+        }
+        @media (min-width: 768px) { /* md breakpoint */
+            .chart-container {
+                height: 400px;
+            }
+        }
+        /* Styles for table filtering/sorting UI (visual only for now) */
+        .table-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            background-color: #f0f9ff; /* sky-50 */
+            border-radius: 0.5rem;
+        }
+        .table-controls input[type="text"] {
+            padding: 0.5rem;
+            border: 1px solid #e0f2fe; /* sky-200 */
+            border-radius: 0.375rem;
+            margin-right: 0.5rem;
+        }
+        .table-controls button {
+            padding: 0.5rem 1rem;
+            background-color: #0ea5e9; /* sky-500 */
+            color: white;
+            border: none;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .table-controls button:hover {
+            background-color: #0284c7; /* sky-600 */
+        }
+        .sort-button {
+            background: none;
+            border: none;
+            color: #0ea5e9; /* sky-500 */
+            cursor: pointer;
+            margin-left: 0.25rem;
+        }
+        .sort-button:hover {
+            color: #0284c7; /* sky-600 */
+        }
+        .table-scroll-container {
+            max-height: 500px; /* Adjust as needed */
+            overflow-y: auto; /* Vertical scroll for the container if table gets too tall */
+        }
+        .mbi-table-container {
+             overflow-x: auto; /* Horizontal scroll for the table itself */
+        }
+    </style>
+    <script>
+        // Tailwind config for custom colors (mental health palette)
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'mental-primary': '#0ea5e9', // sky-500
+                        'mental-primary-hover': '#0284c7', // sky-600
+                        'mental-primary-light': '#e0f2fe', // sky-100
+                        'mental-secondary': '#10b981', // emerald-500
+                        'mental-secondary-hover': '#059669', // emerald-600
+                        'mental-accent': '#f59e0b', // amber-500
+                        'mental-text': '#334155', // slate-700
+                        'mental-text-light': '#64748b', // slate-500
+                        'mental-bg': '#f8fafc', // slate-50
+                        'mental-bg-card': '#ffffff', // white
+                        'mental-border': '#e2e8f0', // slate-200
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-mental-bg font-sans text-mental-text">
+
+    <nav class="bg-mental-bg-card shadow-md fixed w-full z-50 top-0">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-20">
+                <div class="flex items-center">
+                    <a href="#inicio" class="flex items-center space-x-2 text-2xl font-bold text-mental-primary page-link">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="w-10 h-10">
+                            <path fill="#f59e0b" d="M50 10 C 40 30, 30 40, 50 70 C 70 40, 60 30, 50 10 Z M50 30 C 45 40, 45 50, 50 60 C 55 50, 55 40, 50 30 Z"/>
+                            <path fill="#0ea5e9" d="M50 65 C 30 75, 35 95, 50 95 C 65 95, 70 75, 50 65 Z M50 70 A 10 10 0 0 1 50 90 A 10 10 0 0 1 50 70 Z"/>
+                            <path fill="none" stroke="#0284c7" stroke-width="3" d="M25 70 Q 50 55, 75 70 Q 85 85, 50 95 Q 15 85, 25 70 Z"/>
+                        </svg>
+                        <span>MindGuard</span>
+                    </a>
+                </div>
+                <div class="hidden md:flex items-center space-x-1">
+                    <a href="#inicio" class="nav-link page-link px-3 py-2 rounded-md text-sm font-medium text-mental-text-light hover:bg-mental-primary-light hover:text-mental-primary nav-link-active">Inicio</a>
+                    <a href="#herramienta" class="nav-link page-link px-3 py-2 rounded-md text-sm font-medium text-mental-text-light hover:bg-mental-primary-light hover:text-mental-primary">Herramienta</a>
+                    <a href="#metodologia" class="nav-link page-link px-3 py-2 rounded-md text-sm font-medium text-mental-text-light hover:bg-mental-primary-light hover:text-mental-primary">Metodología</a>
+                    <a href="#guia" class="nav-link page-link px-3 py-2 rounded-md text-sm font-medium text-mental-text-light hover:bg-mental-primary-light hover:text-mental-primary">Guía</a>
+                    <a href="#equipo" class="nav-link page-link px-3 py-2 rounded-md text-sm font-medium text-mental-text-light hover:bg-mental-primary-light hover:text-mental-primary">El Equipo</a>
+                    <a href="#contacto" class="nav-link page-link px-3 py-2 rounded-md text-sm font-medium text-mental-text-light hover:bg-mental-primary-light hover:text-mental-primary">Contacto</a>
+                    <a href="#legal" class="nav-link page-link px-3 py-2 rounded-md text-sm font-medium text-mental-text-light hover:bg-mental-primary-light hover:text-mental-primary">Legal</a>
+                </div>
+                <div class="md:hidden flex items-center">
+                    <button id="mobile-menu-button" class="inline-flex items-center justify-center p-2 rounded-md text-mental-text-light hover:text-mental-text hover:bg-mental-primary-light focus:outline-none focus:ring-2 focus:ring-inset focus:ring-mental-primary">
+                        <span class="sr-only">Abrir menú principal</span>
+                        <svg class="block h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                        </svg>
+                        <svg class="hidden h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="md:hidden hidden" id="mobile-menu">
+            <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+                <a href="#inicio" class="nav-link page-link block px-3 py-2 rounded-md text-base font-medium text-mental-text-light hover:bg-mental-primary-light hover:text-mental-primary nav-link-active">Inicio</a>
+                <a href="#herramienta" class="nav-link page-link block px-3 py-2 rounded-md text-base font-medium text-mental-text-light hover:bg-mental-primary-light hover:text-mental-primary">Herramienta</a>
+                <a href="#metodologia" class="nav-link page-link block px-3 py-2 rounded-md text-base font-medium text-mental-text-light hover:bg-mental-primary-light hover:text-mental-primary">Metodología</a>
+                <a href="#guia" class="nav-link page-link block px-3 py-2 rounded-md text-base font-medium text-mental-text-light hover:bg-mental-primary-light hover:text-mental-primary">Guía</a>
+                <a href="#equipo" class="nav-link page-link block px-3 py-2 rounded-md text-base font-medium text-mental-text-light hover:bg-mental-primary-light hover:text-mental-primary">El Equipo</a>
+                <a href="#contacto" class="nav-link page-link block px-3 py-2 rounded-md text-base font-medium text-mental-text-light hover:bg-mental-primary-light hover:text-mental-primary">Contacto</a>
+                <a href="#legal" class="nav-link page-link block px-3 py-2 rounded-md text-base font-medium text-mental-text-light hover:bg-mental-primary-light hover:text-mental-primary">Legal</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="pt-20"> <div id="toast-container" class="fixed bottom-5 right-5 z-[100] space-y-3"></div>
+
+        <div id="inicio-page" class="page-content container mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+            <section class="text-center py-16 md:py-24 bg-gradient-to-br from-sky-500 via-cyan-500 to-teal-500 text-white rounded-xl shadow-2xl">
+                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="w-20 h-20 mx-auto mb-6 text-white">
+                    <path fill-opacity="0.8" fill="#f59e0b" d="M50 10 C 40 30, 30 40, 50 70 C 70 40, 60 30, 50 10 Z M50 30 C 45 40, 45 50, 50 60 C 55 50, 55 40, 50 30 Z"/>
+                    <path fill-opacity="0.9" fill="#e0f2fe" d="M50 65 C 30 75, 35 95, 50 95 C 65 95, 70 75, 50 65 Z M50 70 A 10 10 0 0 1 50 90 A 10 10 0 0 1 50 70 Z"/>
+                    <path fill="none" stroke="#f8fafc" stroke-width="4" d="M25 70 Q 50 55, 75 70 Q 85 85, 50 95 Q 15 85, 25 70 Z"/>
+                </svg>
+                <h1 class="text-4xl sm:text-5xl md:text-6xl font-extrabold mb-6">Descubre Insights con MindGuard</h1>
+                <p class="text-lg sm:text-xl md:text-2xl mb-10 max-w-3xl mx-auto px-4">
+                    Analiza datos del Maslach Burnout Inventory (MBI-HSS). Obtén perfiles detallados, niveles de burnout y análisis de clústeres para tomar decisiones informadas sobre el bienestar.
+                </p>
+                <button class="page-link bg-white text-mental-primary hover:bg-mental-primary-light font-semibold py-3 px-8 rounded-lg text-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105" data-target="herramienta">
+                    Comenzar Análisis Ahora
+                </button>
+            </section>
+
+            <section class="py-12 md:py-20">
+                <div class="grid md:grid-cols-3 gap-8 lg:gap-12 text-center">
+                    <div class="bg-mental-bg-card p-6 rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-300">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12 mx-auto mb-4 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h12A2.25 2.25 0 0 0 20.25 14.25V3m-15.75 0h15.75M3 3v1.5M21 3v1.5M3 16.5v1.5M12 16.5v3.75m0-3.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9 0h1.5m-12-9.75h10.5a2.25 2.25 0 0 0 2.25-2.25V3.75m0 0A2.25 2.25 0 0 0 13.5 1.5h-3A2.25 2.25 0 0 0 8.25 3.75v3.75m0 0H3.75m0 0h7.5V3.75M21 16.5v1.5m0 0V18m0 0v1.5m0 0h-1.5m1.5 0h1.5" /></svg>
+                        <h3 class="text-xl font-semibold mb-2 text-mental-text">Identifica Patrones</h3>
+                        <p class="text-mental-text-light">Descubre tendencias y patrones de burnout ocultos en tus datos.</p>
+                    </div>
+                    <div class="bg-mental-bg-card p-6 rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-300">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12 mx-auto mb-4 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.355a7.5 7.5 0 0 1-4.5 0m4.5 0v-.75A.75.75 0 0 0 15 15h-3a.75.75 0 0 0-.75.75v.75m3.75 0A7.47 7.47 0 0 1 12 19.5a7.47 7.47 0 0 1-3.75 2.25M12 19.5v-.75a.75.75 0 0 0-.75-.75H9a.75.75 0 0 0-.75.75v.75M12 19.5A7.47 7.47 0 0 0 15.75 21.75a7.47 7.47 0 0 0 3.75-2.25M12 15V9.75m0 9.75A12.06 12.06 0 0 0 16.25 18m-8.5 0A12.06 12.06 0 0 1 12 19.5m0-9.75A12.06 12.06 0 0 0 7.75 18m8.5 0A12.06 12.06 0 0 0 12 19.5m0-3.75a.75.75 0 0 0-.75-.75H9a.75.75 0 0 0-.75.75v.75m3.75 0A7.47 7.47 0 0 1 12 15.75a7.47 7.47 0 0 1-3.75-.225M12 15.75V9.75m0 6A12.064 12.064 0 0 0 16.25 15m-8.5 0A12.064 12.064 0 0 1 12 15.75m0-6a.75.75 0 0 0-.75-.75H9a.75.75 0 0 0-.75.75v.75m0 0A12.064 12.064 0 0 0 12 9.75m0 0A12.064 12.064 0 0 0 15.75 9m-8.5 0A12.064 12.064 0 0 1 12 9.75M12 3c-1.105 0-2.07.168-3 .5m6 0c.93.332 1.895.5 3 .5m0 0a9.75 9.75 0 0 1 0 19.5M12 3a9.75 9.75 0 0 1 0 19.5m-3-.5a9.708 9.708 0 0 1-1.757-.332M15 22.5a9.708 9.708 0 0 0 1.757-.332" /></svg>
+                        <h3 class="text-xl font-semibold mb-2 text-mental-text">Obtén Insights Accionables</h3>
+                        <p class="text-mental-text-light">Transforma datos crudos en conocimiento útil para intervenir.</p>
+                    </div>
+                    <div class="bg-mental-bg-card p-6 rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-300">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12 mx-auto mb-4 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" /></svg>
+                        <h3 class="text-xl font-semibold mb-2 text-mental-text">Procesamiento Seguro</h3>
+                        <p class="text-mental-text-light">Análisis realizado localmente en tu navegador, tus datos no se suben a servidores externos.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="py-12 md:py-20 bg-mental-primary-light rounded-xl">
+                <h2 class="text-3xl font-bold text-center mb-12 text-mental-text">¿Cómo Funciona?</h2>
+                <div class="grid md:grid-cols-3 gap-8 lg:gap-12 px-4 md:px-0">
+                    <div class="text-center">
+                        <div class="bg-mental-primary text-white rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4 shadow-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.338 2.166c1.543.586 3.321.934 5.25 1.017a4.875 4.875 0 0 1 0 9.72V19.5a4.5 4.5 0 0 1-1.41-8.775M12 16.5V19.5" /></svg>
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2 text-mental-text">1. Prepara y Sube tu CSV</h3>
+                        <p class="text-sm text-mental-text-light">Asegúrate que tu archivo CSV tenga el formato correcto con las respuestas del MBI.</p>
+                    </div>
+                    <div class="text-center">
+                        <div class="bg-mental-primary text-white rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4 shadow-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0 0 20.25 18V6A2.25 2.25 0 0 0 18 3.75H6A2.25 2.25 0 0 0 3.75 6v12A2.25 2.25 0 0 0 6 20.25Z" /></svg>
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2 text-mental-text">2. Analiza los Datos</h3>
+                        <p class="text-sm text-mental-text-light">Nuestra herramienta calcula subescalas, niveles de burnout y realiza clustering.</p>
+                    </div>
+                    <div class="text-center">
+                        <div class="bg-mental-primary text-white rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4 shadow-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+                        </div>
+                        <h3 class="text-lg font-semibold mb-2 text-mental-text">3. Visualiza y Exporta</h3>
+                        <p class="text-sm text-mental-text-light">Interpreta los resultados, gráficos, perfiles y descarga tu informe en PDF.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="py-12 md:py-20">
+                <h2 class="text-3xl font-bold text-center mb-12 text-mental-text">Testimonios (Ejemplos)</h2>
+                <div class="grid md:grid-cols-2 gap-8 lg:gap-12">
+                    <div class="bg-mental-bg-card p-8 rounded-xl shadow-lg">
+                        <p class="italic text-mental-text-light mb-4">"MindGuard nos ha permitido entender mucho mejor la dinámica del burnout en nuestro equipo. Los perfiles de clústeres y los gráficos fueron reveladores."</p>
+                        <footer class="text-sm font-semibold text-mental-primary">- Gerente de RRHH, Empresa Tech</footer>
+                    </div>
+                    <div class="bg-mental-bg-card p-8 rounded-xl shadow-lg">
+                        <p class="italic text-mental-text-light mb-4">"Fácil de usar y los resultados son inmediatos y visualmente claros. Muy útil para consultores."</p>
+                        <footer class="text-sm font-semibold text-mental-primary">- Consultor de Bienestar Organizacional</footer>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div id="herramienta-page" class="page-content hidden container mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+            <div class="bg-mental-bg-card p-6 sm:p-8 rounded-xl shadow-xl space-y-8">
+                <div>
+                    <h2 class="text-2xl sm:text-3xl font-bold text-mental-primary mb-2 flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 mr-3"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" /></svg>
+                        Herramienta de Análisis MindGuard
+                    </h2>
+                    <p class="text-mental-text-light">
+                        Sube tu archivo CSV con datos del MBI-HSS (22 ítems) para análisis detallado y clustering.
+                        Consulta la <a href="#guia" class="page-link text-mental-primary hover:underline" data-target="guia">guía de usuario</a> para el formato correcto.
+                    </p>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label for="csvFile" class="block text-lg font-medium text-mental-text mb-2">1. Selecciona tu archivo CSV:</label>
+                        <input type="file" id="csvFile" accept=".csv" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-mental-primary-light file:text-mental-primary hover:file:bg-sky-200 transition-colors duration-150 cursor-pointer focus:outline-none focus:ring-2 focus:ring-mental-primary focus:border-mental-primary">
+                    </div>
+                    <button id="processButton" class="w-full bg-mental-primary hover:bg-mental-primary-hover text-white font-semibold py-3 px-6 rounded-lg text-lg shadow-md hover:shadow-lg transition duration-300 ease-in-out flex items-center justify-center space-x-2" disabled>
+                        <span id="processButtonText">Inicializando...</span>
+                        <svg id="processButtonSpinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <svg id="processButtonIcon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 hidden"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.338 2.166c1.543.586 3.321.934 5.25 1.017a4.875 4.875 0 0 1 0 9.72V19.5a4.5 4.5 0 0 1-1.41-8.775M12 16.5V19.5" /></svg>
+                    </button>
+                </div>
+            </div>
+
+            <div id="reportContent"> <div id="mbiResultsSection" class="hidden mt-10 bg-mental-bg-card p-6 sm:p-8 rounded-xl shadow-xl">
+                    <h3 class="text-xl sm:text-2xl font-bold text-teal-700 mb-6 flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-7 h-7 mr-3"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h12A2.25 2.25 0 0 0 20.25 14.25V3m-15.75 0h15.75M3 3v1.5M21 3v1.5M3 16.5v1.5M12 16.5v3.75m0-3.75a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9 0h1.5m-12-9.75h10.5a2.25 2.25 0 0 0 2.25-2.25V3.75m0 0A2.25 2.25 0 0 0 13.5 1.5h-3A2.25 2.25 0 0 0 8.25 3.75v3.75m0 0H3.75m0 0h7.5V3.75M21 16.5v1.5m0 0V18m0 0v1.5m0 0h-1.5m1.5 0h1.5" /></svg>
+                        Resultados Detallados MBI
+                    </h3>
+                    <div class="grid md:grid-cols-2 gap-8 mb-8">
+                        <div>
+                            <h4 class="text-lg font-semibold mb-3 text-mental-text text-center">Promedio Subescalas MBI</h4>
+                            <div class="chart-container bg-mental-primary-light p-4 rounded-lg shadow-inner"><canvas id="mbiAveragesChart"></canvas></div>
+                        </div>
+                        <div>
+                            <h4 class="text-lg font-semibold mb-3 text-mental-text text-center">Distribución Niveles de Burnout</h4>
+                            <div class="chart-container bg-mental-primary-light p-4 rounded-lg shadow-inner"><canvas id="mbiLevelDistributionChart"></canvas></div>
+                        </div>
+                    </div>
+                    <div class="table-controls">
+                        <input type="text" id="mbiTableFilter" placeholder="Filtrar tabla..." class="focus:ring-mental-primary focus:border-mental-primary">
+                        <div>
+                            <button id="sortMbiById">Ordenar por ID <span class="sort-indicator"></span></button>
+                            <button id="sortMbiByAE">Ordenar por AE <span class="sort-indicator"></span></button>
+                        </div>
+                    </div>
+                    <div class="mbi-table-container table-scroll-container rounded-lg shadow">
+                        <table class="w-full min-w-max text-sm text-left text-mental-text-light">
+                            <thead class="text-xs text-mental-text uppercase bg-mental-primary-light">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3">ID <button class="sort-button" data-column="id">↕</button></th>
+                                    <th scope="col" class="px-6 py-3">AE (Score) <button class="sort-button" data-column="ae_score">↕</button></th>
+                                    <th scope="col" class="px-6 py-3">AE (Nivel) <button class="sort-button" data-column="ae_level">↕</button></th>
+                                    <th scope="col" class="px-6 py-3">DP (Score) <button class="sort-button" data-column="dp_score">↕</button></th>
+                                    <th scope="col" class="px-6 py-3">DP (Nivel) <button class="sort-button" data-column="dp_level">↕</button></th>
+                                    <th scope="col" class="px-6 py-3">RP (Score) <button class="sort-button" data-column="rp_score">↕</button></th>
+                                    <th scope="col" class="px-6 py-3">RP (Nivel) <button class="sort-button" data-column="rp_level">↕</button></th>
+                                    <th scope="col" class="px-6 py-3">Observación</th>
+                                </tr>
+                            </thead>
+                            <tbody id="mbiResultsTableBody" class="bg-mental-bg-card"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="clusteringAnalysisSection" class="hidden mt-10 bg-mental-bg-card p-6 sm:p-8 rounded-xl shadow-xl">
+                    <h3 class="text-xl sm:text-2xl font-bold text-emerald-700 mb-6 flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-7 h-7 mr-3"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.94-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.06 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" /></svg>
+                        Análisis de Clustering (K-Means)
+                    </h3>
+                    <p class="text-mental-text-light mb-6">Agrupa individuos en clústeres basados en sus perfiles MBI.</p>
+                    <div class="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-4 mb-6">
+                        <label for="numClusters" class="block text-lg font-medium text-mental-text">2. Número de Clústeres (K):</label>
+                        <input type="number" id="numClusters" value="3" min="2" max="10" class="w-24 px-3 py-2 border border-mental-border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-mental-secondary focus:border-mental-secondary">
+                    </div>
+                    <button id="runClusteringButton" class="w-full bg-mental-secondary hover:bg-mental-secondary-hover text-white font-semibold py-3 px-6 rounded-lg text-lg shadow-md hover:shadow-lg transition duration-300 ease-in-out flex items-center justify-center space-x-2">
+                        <span id="clusterButtonText">Realizar Clustering</span>
+                         <svg id="clusterButtonSpinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <svg id="clusterButtonIcon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L1.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.25 12h.008v.008h-.008V12Zm0 0h.008v.008h-.008V12Zm0 0h.008v.008h-.008V12Zm0-3.75h.008v.008h-.008v-.008Zm0 7.5h.008v.008h-.008v-.008Z" /></svg>
+                    </button>
+                </div>
+
+                <div id="clusteringResultsOutputSection" class="hidden mt-10 bg-mental-bg-card p-6 sm:p-8 rounded-xl shadow-xl">
+                     <h3 class="text-xl sm:text-2xl font-bold text-cyan-700 mb-6 flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-7 h-7 mr-3"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 14.25v2.25m3-4.5v4.5m3-6.75v6.75m3-9v9M6 20.25h12A2.25 2.25 0 0 0 20.25 18V6A2.25 2.25 0 0 0 18 3.75H6A2.25 2.25 0 0 0 3.75 6v12A2.25 2.25 0 0 0 6 20.25Z" /></svg>
+                        Resultados del Clustering
+                    </h3>
+                    <div class="grid md:grid-cols-2 gap-8 mb-8">
+                        <div>
+                            <h4 class="text-lg font-semibold mb-3 text-mental-text text-center">Distribución de Individuos por Clúster</h4>
+                            <div class="chart-container bg-mental-primary-light p-4 rounded-lg shadow-inner"><canvas id="clusterDistributionChart"></canvas></div>
+                        </div>
+                        <div>
+                            <h4 class="text-lg font-semibold mb-3 text-mental-text text-center">Perfiles Medios de Clúster (Radar)</h4>
+                            <div class="chart-container bg-mental-primary-light p-4 rounded-lg shadow-inner"><canvas id="clusterProfileRadarChart"></canvas></div>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto rounded-lg shadow">
+                        <table class="w-full min-w-max text-sm text-left text-mental-text-light">
+                            <thead class="text-xs text-mental-text uppercase bg-mental-primary-light">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3">Clúster #</th>
+                                    <th scope="col" class="px-6 py-3">N Individuos</th>
+                                    <th scope="col" class="px-6 py-3">AE Medio</th>
+                                    <th scope="col" class="px-6 py-3">DP Medio</th>
+                                    <th scope="col" class="px-6 py-3">RP Medio</th>
+                                    <th scope="col" class="px-6 py-3">Perfil Tentativo</th>
+                                    <th scope="col" class="px-6 py-3">Interpretación Básica</th>
+                                </tr>
+                            </thead>
+                            <tbody id="clusteringResultsTableBody" class="bg-mental-bg-card"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div> <div class="mt-10 text-center">
+                <button id="downloadPdfButton" class="bg-mental-accent hover:bg-amber-600 text-white font-semibold py-3 px-8 rounded-lg text-lg shadow-md hover:shadow-lg transition duration-300 ease-in-out flex items-center justify-center space-x-2 mx-auto hidden">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                    <span>Descargar Informe PDF</span>
+                </button>
+            </div>
+        </div>
+
+        <div id="metodologia-page" class="page-content hidden container mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+            <div class="bg-mental-bg-card p-6 sm:p-8 rounded-xl shadow-xl space-y-8">
+                <h2 class="text-2xl sm:text-3xl font-bold text-mental-primary mb-6 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 mr-3"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" /></svg>
+                    Acerca de la Herramienta y Metodología
+                </h2>
+                <div class="space-y-6" id="accordionMetodologia">
+                    </div>
+            </div>
+        </div>
+
+        <div id="guia-page" class="page-content hidden container mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+             <div class="bg-mental-bg-card p-6 sm:p-8 rounded-xl shadow-xl space-y-8">
+                <h2 class="text-2xl sm:text-3xl font-bold text-mental-primary mb-6 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 mr-3"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z" /></svg>
+                    Guía de Usuario e Instrucciones
+                </h2>
+                <div class="space-y-6" id="accordionGuia">
+                    </div>
+            </div>
+        </div>
+
+        <div id="equipo-page" class="page-content hidden container mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+            <div class="bg-mental-bg-card p-6 sm:p-8 rounded-xl shadow-xl space-y-8">
+                <h2 class="text-2xl sm:text-3xl font-bold text-mental-primary mb-10 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 mr-3"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.94-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.06 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" /></svg>
+                    Nuestro Equipo
+                </h2>
+                <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <div class="bg-mental-primary-light p-6 rounded-lg shadow-md text-center">
+                        <img src="https://placehold.co/150x150/0ea5e9/ffffff?text=Foto" alt="Foto de Miembro del Equipo" class="w-32 h-32 rounded-full mx-auto mb-4 border-4 border-white shadow-lg">
+                        <h3 class="text-xl font-semibold text-mental-text mb-1">Nombre del Miembro</h3>
+                        <p class="text-mental-primary font-medium mb-2">Rol en el Proyecto</p>
+                        <p class="text-sm text-mental-text-light mb-3">Breve descripción de la experiencia y contribución al proyecto. Puede ser un par de frases.</p>
+                        <a href="#" target="_blank" class="text-mental-primary hover:text-mental-primary-hover transition-colors duration-150">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 inline-block" viewBox="0 0 24 24" fill="currentColor"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
+                            LinkedIn
+                        </a>
+                    </div>
+                    <div class="bg-mental-primary-light p-6 rounded-lg shadow-md text-center">
+                        <img src="https://placehold.co/150x150/0ea5e9/ffffff?text=Foto" alt="Foto de Miembro del Equipo" class="w-32 h-32 rounded-full mx-auto mb-4 border-4 border-white shadow-lg">
+                        <h3 class="text-xl font-semibold text-mental-text mb-1">Otro Miembro</h3>
+                        <p class="text-mental-primary font-medium mb-2">Otro Rol</p>
+                        <p class="text-sm text-mental-text-light mb-3">Experiencia relevante y aportes clave al desarrollo de MindGuard.</p>
+                        <a href="#" target="_blank" class="text-mental-primary hover:text-mental-primary-hover transition-colors duration-150">
+                             <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 inline-block" viewBox="0 0 24 24" fill="currentColor"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
+                            LinkedIn
+                        </a>
+                    </div>
+                     <div class="bg-mental-primary-light p-6 rounded-lg shadow-md text-center">
+                        <img src="https://placehold.co/150x150/0ea5e9/ffffff?text=Foto" alt="Foto de Miembro del Equipo" class="w-32 h-32 rounded-full mx-auto mb-4 border-4 border-white shadow-lg">
+                        <h3 class="text-xl font-semibold text-mental-text mb-1">Tercer Miembro</h3>
+                        <p class="text-mental-primary font-medium mb-2">Especialista en UX/UI</p>
+                        <p class="text-sm text-mental-text-light mb-3">Responsable del diseño y la experiencia de usuario de la plataforma MindGuard.</p>
+                        <a href="#" target="_blank" class="text-mental-primary hover:text-mental-primary-hover transition-colors duration-150">
+                             <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 inline-block" viewBox="0 0 24 24" fill="currentColor"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
+                            LinkedIn
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <div id="contacto-page" class="page-content hidden container mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+            <div class="bg-mental-bg-card p-6 sm:p-8 rounded-xl shadow-xl">
+                <h2 class="text-2xl sm:text-3xl font-bold text-mental-primary mb-8 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 mr-3"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" /></svg>
+                    Contacto
+                </h2>
+                <p class="text-mental-text-light mb-8 text-center">Si tienes preguntas, comentarios, sugerencias o necesitas soporte, por favor contáctanos.</p>
+                <div class="grid md:grid-cols-2 gap-10">
+                    <form id="contactForm" class="space-y-6">
+                        <div>
+                            <label for="contactName" class="block text-sm font-medium text-mental-text mb-1">Nombre</label>
+                            <input type="text" id="contactName" name="contactName" required class="w-full px-4 py-2 border border-mental-border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-mental-primary focus:border-mental-primary">
+                        </div>
+                        <div>
+                            <label for="contactEmail" class="block text-sm font-medium text-mental-text mb-1">Correo Electrónico</label>
+                            <input type="email" id="contactEmail" name="contactEmail" required class="w-full px-4 py-2 border border-mental-border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-mental-primary focus:border-mental-primary">
+                        </div>
+                        <div>
+                            <label for="contactSubject" class="block text-sm font-medium text-mental-text mb-1">Asunto</label>
+                            <input type="text" id="contactSubject" name="contactSubject" class="w-full px-4 py-2 border border-mental-border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-mental-primary focus:border-mental-primary">
+                        </div>
+                        <div>
+                            <label for="contactMessage" class="block text-sm font-medium text-mental-text mb-1">Mensaje</label>
+                            <textarea id="contactMessage" name="contactMessage" rows="5" required class="w-full px-4 py-2 border border-mental-border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-mental-primary focus:border-mental-primary"></textarea>
+                        </div>
+                        <button type="submit" class="w-full bg-mental-primary hover:bg-mental-primary-hover text-white font-semibold py-3 px-6 rounded-lg text-lg shadow-md hover:shadow-lg transition duration-300 ease-in-out">Enviar Mensaje</button>
+                    </form>
+                    <div class="space-y-6 text-mental-text-light">
+                        <h4 class="text-lg font-semibold text-mental-text">Información Adicional</h4>
+                        <p class="flex items-start">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-2 mt-1 text-mental-primary flex-shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 9v.906a2.25 2.25 0 0 1-1.183 1.981l-6.478 3.488M2.25 9v.906a2.25 2.25 0 0 0 1.183 1.981l6.478 3.488m8.839 2.51-4.66-2.51m0 0-1.023-.55a2.25 2.25 0 0 0-2.134 0l-1.022.55m0 0-4.661 2.51m16.5-2.51V6.525A2.25 2.25 0 0 0 19.5 4.275H4.5A2.25 2.25 0 0 0 2.25 6.525v6.388" /></svg>
+                            <span><strong>Correo de Soporte:</strong> <a href="mailto:soporte@mindguard.example.com" class="text-mental-primary hover:underline">soporte@mindguard.example.com</a> (Correo de ejemplo)</span>
+                        </p>
+                        <div class="flex items-start">
+                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-2 mt-1 text-mental-primary flex-shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" /></svg>
+                            <div>
+                                <strong>Para errores específicos, por favor incluye:</strong>
+                                <ul class="list-disc list-inside ml-4 mt-1 text-sm">
+                                    <li>Descripción del problema.</li>
+                                    <li>Pasos que seguiste.</li>
+                                    <li>Captura de pantalla del error (si es posible).</li>
+                                    <li>Navegador que estás utilizando.</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <p class="text-sm text-slate-500 italic mt-4">(Esta es una aplicación de demostración. El formulario de contacto y el correo no están funcionalmente conectados a un backend real.)</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="legal-page" class="page-content hidden container mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+            <div class="bg-mental-bg-card p-6 sm:p-8 rounded-xl shadow-xl space-y-8">
+                <h2 class="text-2xl sm:text-3xl font-bold text-mental-primary mb-6 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 mr-3"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21.75c2.436 0 4.709-.683 6.57-1.875M12 21.75c-2.436 0-4.709-.683-6.57-1.875M12 21.75V13.125c0-3.24.806-6.24 2.25-8.758M12 13.125c0-3.24-.806-6.24-2.25-8.758m13.125 8.758C24.291 11.064 24 7.79 24 6C24 2.686 21.314 0 18 0s-6 2.686-6 6c0 1.79.291 5.064 1.625 7.366M3.375 14.618C2.041 12.32 1.75 9.052 1.75 7.25c0-3.314 2.686-6 6-6s6 2.686 6 6c0 1.802-.291 5.064-1.625 7.366" /></svg>
+                    Aspectos Legales
+                </h2>
+                <div class="space-y-6" id="accordionLegal">
+                    </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-slate-800 text-slate-300 py-12 mt-12">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <p class="text-sm">&copy; <span id="currentYear"></span> MindGuard. Todos los derechos reservados (Ejemplo).</p>
+            <p class="text-sm mt-1">
+                <a href="#legal" class="page-link hover:text-sky-400 transition-colors duration-150" data-target="legal">Política de Privacidad</a> |
+                <a href="#legal" class="page-link hover:text-sky-400 transition-colors duration-150" data-target="legal">Términos de Servicio</a>
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        // --- Constants and Configuration ---
+        const MBI_ITEMS_CONFIG = {
+            AGOTAMIENTO_EMOCIONAL: [1, 2, 3, 6, 8, 13, 14, 16, 20],
+            DESPERSONALIZACION: [5, 10, 11, 15, 22],
+            REALIZACION_PERSONAL: [4, 7, 9, 12, 17, 18, 19, 21]
+        };
+        const TOTAL_MBI_ITEMS = 22;
+        const CHART_COLORS = { // Updated with new palette in mind, but can be more specific if needed
+            AE: 'rgba(244, 63, 94, 0.7)', // Rose-500
+            DP: 'rgba(245, 158, 11, 0.7)', // Amber-500
+            RP: 'rgba(16, 185, 129, 0.7)', // Emerald-500
+            ClusterBase: 'rgba(14, 165, 233, 0.7)', // Sky-500
+        };
+         const cutoffs = { // Made globally accessible
+            AE: { low: 18, moderate: 26, highThreshold: 27 },
+            DP: { low: 5, moderate: 9, highThreshold: 10 },
+            RP: { low: 33, moderate: 39, highThreshold: 40 } // Low score is problematic for RP
+        };
+
+
+        // --- DOM Elements (Lazy Loaded) ---
+        let csvFileInput, processButton, processButtonText, processButtonSpinner, processButtonIcon;
+        let numClustersInput, runClusteringButton, clusterButtonText, clusterButtonSpinner, clusterButtonIcon;
+        let mbiResultsSection, mbiResultsTableBody, clusteringAnalysisSection, clusteringResultsOutputSection, clusteringResultsTableBody;
+        let downloadPdfButton;
+        let chartInstances = {}; // To store chart objects for updates/destruction
+        let currentMbiData = []; // To store data for sorting/filtering
+
+        function getDOMElements() {
+            csvFileInput = document.getElementById('csvFile');
+            processButton = document.getElementById('processButton');
+            processButtonText = document.getElementById('processButtonText');
+            processButtonSpinner = document.getElementById('processButtonSpinner');
+            processButtonIcon = document.getElementById('processButtonIcon');
+
+            numClustersInput = document.getElementById('numClusters');
+            runClusteringButton = document.getElementById('runClusteringButton');
+            clusterButtonText = document.getElementById('clusterButtonText');
+            clusterButtonSpinner = document.getElementById('clusterButtonSpinner');
+            clusterButtonIcon = document.getElementById('clusterButtonIcon');
+            
+            mbiResultsSection = document.getElementById('mbiResultsSection');
+            mbiResultsTableBody = document.getElementById('mbiResultsTableBody');
+            clusteringAnalysisSection = document.getElementById('clusteringAnalysisSection');
+            clusteringResultsOutputSection = document.getElementById('clusteringResultsOutputSection');
+            clusteringResultsTableBody = document.getElementById('clusteringResultsTableBody');
+            downloadPdfButton = document.getElementById('downloadPdfButton');
+        }
+
+        // --- State Variables ---
+        let processedMbiDataForClustering = [];
+        let appInitialized = false;
+        let currentProcessing = false;
+
+        // --- Toast Notifications ---
+        function showToast(message, type = 'info', duration = 4000) {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+
+            setTimeout(() => toast.classList.add('show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 300);
+            }, duration);
+        }
+
+        // --- Accordion Logic ---
+        function initializeAccordions() {
+            const accordionContainers = document.querySelectorAll('[id^="accordion"]');
+            accordionContainers.forEach(container => {
+                const triggers = container.querySelectorAll('.accordion-trigger');
+                triggers.forEach(trigger => {
+                    trigger.addEventListener('click', () => {
+                        const content = trigger.nextElementSibling;
+                        const icon = trigger.querySelector('.accordion-icon');
+                        const isOpen = content.classList.contains('open');
+
+                        if (!container.dataset.multipleOpen) {
+                             container.querySelectorAll('.accordion-content.open').forEach(openContent => {
+                                if (openContent !== content) {
+                                    openContent.classList.remove('open');
+                                    const otherIcon = openContent.previousElementSibling.querySelector('.accordion-icon');
+                                    if (otherIcon) otherIcon.classList.replace('rotate-180', 'rotate-0');
+                                }
+                            });
+                        }
+                        
+                        content.classList.toggle('open');
+                        if (icon) icon.classList.toggle('rotate-0', !isOpen);
+                        if (icon) icon.classList.toggle('rotate-180', isOpen);
+                    });
+                });
+            });
+        }
+        
+        function buildAccordionItem(id, title, iconSvg, contentHtml, isOpen = false) {
+            return `
+                <div class="border border-mental-border rounded-lg overflow-hidden">
+                    <button class="accordion-trigger w-full flex items-center justify-between p-4 sm:p-5 text-left bg-mental-primary-light hover:bg-sky-200 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-mental-primary">
+                        <span class="flex items-center text-md sm:text-lg font-semibold text-mental-text">
+                            ${iconSvg}
+                            ${title}
+                        </span>
+                        <svg class="accordion-icon w-5 h-5 text-mental-text-light transition-transform duration-300 ${isOpen ? 'rotate-180' : 'rotate-0'}" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+                    </button>
+                    <div class="accordion-content ${isOpen ? 'open' : ''} bg-mental-bg-card">
+                        <div class="p-4 sm:p-5 text-mental-text-light text-sm sm:text-base leading-relaxed">${contentHtml}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function populateAccordions() {
+            const metodologiaIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" /></svg>`;
+            const mbiIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>`;
+            const interpretacionIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25A1.125 1.125 0 0 1 9.75 19.875V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg>`;
+            const kmeansIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.94-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.06 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" /></svg>`;
+            const seguridadIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z" /></svg>`;
+            
+            const metodologiaItems = [
+                { id: "sobre", title: "Sobre la Herramienta MindGuard", icon: metodologiaIcon, content: `<p>MindGuard es una aplicación web interactiva diseñada para empoderar a profesionales de la salud ocupacional, investigadores y gestores de talento humano en el análisis y comprensión del síndrome de burnout. Su objetivo principal es simplificar la interpretación de datos provenientes del Maslach Burnout Inventory (MBI), específicamente la versión para Servicios Humanos (MBI-HSS).</p><p class="mt-2"><strong>Misión:</strong> Facilitar la identificación temprana de patrones de burnout y perfiles de riesgo dentro de las organizaciones, proporcionando una herramienta accesible, visual e intuitiva que no requiere conocimientos avanzados de estadística para su uso básico.</p><p class="mt-2"><strong>Funcionalidades Clave:</strong></p><ul class="list-disc list-inside mt-2 space-y-1"><li>Cálculo automático de las tres subescalas del MBI-HSS: Agotamiento Emocional (AE), Despersonalización (DP) y Realización Personal (RP).</li><li>Clasificación de los niveles de burnout (bajo, moderado, alto) para cada individuo y subescala, basada en puntos de corte estandarizados.</li><li>Visualización gráfica de los resultados promedio y distribuciones de niveles de burnout.</li><li>Aplicación del algoritmo de clustering K-Means para identificar grupos o perfiles de individuos con características similares de burnout.</li><li>Presentación de los perfiles de clústeres mediante tablas resumen y gráficos radar comparativos.</li><li>Énfasis en la privacidad y seguridad de los datos, ya que todo el procesamiento se realiza localmente en el navegador del usuario.</li></ul><p class="mt-2">MindGuard busca ser un aliado estratégico en la promoción del bienestar laboral y la prevención del burnout, permitiendo a las organizaciones tomar decisiones informadas y diseñar intervenciones más efectivas y focalizadas.</p>`, isOpen: true },
+                { id: "mbi", title: "Maslach Burnout Inventory (MBI-HSS)", icon: mbiIcon, content: `<p>El Maslach Burnout Inventory (MBI) es el instrumento más utilizado a nivel mundial para la evaluación del síndrome de burnout. La versión para Servicios Humanos (Human Services Survey - MBI-HSS) está específicamente diseñada para profesionales que trabajan en contacto directo y continuo con personas (ej. personal de salud, educadores, trabajadores sociales).</p><p class="mt-2">El MBI-HSS consta de 22 ítems que evalúan tres dimensiones fundamentales del burnout:</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>Agotamiento Emocional (AE):</strong> Refleja la sensación de estar exhausto emocionalmente por las demandas del trabajo. Se evalúa con 9 ítems (ej. "Me siento emocionalmente agotado por mi trabajo"). Puntuaciones altas indican mayor agotamiento.</li><li><strong>Despersonalización (DP):</strong> Describe una respuesta impersonal y distante hacia los receptores del servicio o cuidado. Se mide con 5 ítems (ej. "Siento que trato a algunos beneficiarios como si fueran objetos impersonales"). Puntuaciones altas indican mayor despersonalización.</li><li><strong>Realización Personal (RP) o Logro Personal:</strong> Evalúa los sentimientos de competencia y logro en el trabajo con personas. Consta de 8 ítems (ej. "Me siento lleno de energía en mi trabajo"). Es importante destacar que <strong>puntuaciones bajas en esta subescala indican un mayor grado de burnout</strong>, mientras que puntuaciones altas son indicativas de bienestar.</li></ul><p class="mt-2">Cada ítem se valora en una escala de frecuencia tipo Likert de 7 puntos, que va desde "Nunca" (0 puntos) hasta "Todos los días" (6 puntos). La puntuación total para cada subescala se obtiene sumando los valores de los ítems correspondientes.</p><p class="mt-2">El MBI-HSS es una herramienta validada y fiable que proporciona una medida multidimensional del burnout, permitiendo un diagnóstico más preciso que las evaluaciones unidimensionales.</p>` },
+                { id: "interpretacion", title: "Interpretación de Niveles de Burnout", icon: interpretacionIcon, content: `<p>La interpretación de las puntuaciones del MBI-HSS se realiza comparando los scores obtenidos en cada una de las tres subescalas (Agotamiento Emocional, Despersonalización y Realización Personal) con puntos de corte establecidos en la literatura científica. Estos puntos de corte permiten clasificar los niveles de burnout en categorías como Bajo, Moderado y Alto.</p><p class="mt-2">MindGuard utiliza los siguientes puntos de corte referenciales comúnmente aceptados para el MBI-HSS:</p><div class="mt-3 space-y-3"><div class="p-3 bg-sky-50 rounded-md"><strong class="text-sky-700">Agotamiento Emocional (AE)</strong> (Máx. 54 puntos):<ul class="list-disc list-inside ml-4 mt-1 text-sm"><li><strong>Bajo:</strong> ≤ 18 puntos</li><li><strong>Moderado:</strong> 19 - 26 puntos</li><li><strong>Alto:</strong> ≥ 27 puntos</li></ul></div><div class="p-3 bg-amber-50 rounded-md"><strong class="text-amber-700">Despersonalización (DP)</strong> (Máx. 30 puntos):<ul class="list-disc list-inside ml-4 mt-1 text-sm"><li><strong>Bajo:</strong> ≤ 5 puntos</li><li><strong>Moderado:</strong> 6 - 9 puntos</li><li><strong>Alto:</strong> ≥ 10 puntos</li></ul></div><div class="p-3 bg-emerald-50 rounded-md"><strong class="text-emerald-700">Realización Personal (RP)</strong> (Máx. 48 puntos):<ul class="list-disc list-inside ml-4 mt-1 text-sm"><li><strong>Bajo (Indica mayor burnout):</strong> ≤ 33 puntos</li><li><strong>Moderado:</strong> 34 - 39 puntos</li><li><strong>Alto (Indica menor burnout, deseable):</strong> ≥ 40 puntos</li></ul></div></div><p class="mt-3"><strong>Consideraciones Importantes para la Interpretación:</strong></p><ul class="list-disc list-inside mt-2 space-y-1"><li>Un perfil de <strong>alto burnout</strong> se caracteriza típicamente por puntuaciones altas en Agotamiento Emocional y Despersonalización, y puntuaciones bajas en Realización Personal.</li><li>Es crucial analizar las tres dimensiones conjuntamente, ya que diferentes combinaciones pueden indicar distintos perfiles y necesidades de intervención.</li><li>Estos puntos de corte son referenciales y pueden existir variaciones según estudios o adaptaciones culturales. La herramienta los proporciona como una guía general.</li><li>La interpretación final siempre debe considerar el contexto específico de la población evaluada y, preferiblemente, ser realizada por un profesional cualificado.</li></ul><p class="mt-2 text-xs text-slate-500">MindGuard presenta estos niveles de forma visual y tabular para facilitar una rápida comprensión del estado de los individuos evaluados.</p>` },
+                { id: "kmeans", title: "Clustering K-Means y su Valor Agregado", icon: kmeansIcon, content: `<p>El algoritmo de clustering K-Means es una técnica de aprendizaje no supervisado que se utiliza para agrupar un conjunto de datos en 'K' clústeres distintos, donde 'K' es un número predefinido por el usuario. El objetivo es que los puntos de datos dentro de un mismo clúster sean lo más similares posible entre sí, y lo más diferentes posible de los puntos de datos en otros clústeres.</p><p class="mt-2"><strong>¿Cómo funciona (de forma simplificada) en MindGuard?</strong></p><ol class="list-decimal list-inside mt-2 space-y-1"><li><strong>Selección de Características:</strong> Se utilizan las puntuaciones de las tres subescalas del MBI (Agotamiento Emocional, Despersonalización y Realización Personal) como las características para agrupar a los individuos.</li><li><strong>Estandarización de Datos:</strong> Antes de aplicar K-Means, las puntuaciones de las subescalas suelen ser estandarizadas (por ejemplo, convirtiéndolas a puntuaciones Z). Esto es importante porque las subescalas tienen diferentes rangos de puntuación, y la estandarización asegura que cada subescala contribuya de manera equitativa al cálculo de distancias entre individuos. MindGuard realiza esta estandarización.</li><li><strong>Inicialización de Centroides:</strong> El algoritmo comienza seleccionando 'K' puntos iniciales como centroides de los clústeres (pueden ser puntos de datos aleatorios o seleccionados mediante alguna heurística).</li><li><strong>Asignación:</strong> Cada individuo es asignado al clúster cuyo centroide esté más cercano (generalmente usando la distancia euclidiana).</li><li><strong>Actualización de Centroides:</strong> Una vez que todos los individuos han sido asignados, se recalculan los centroides de cada clúster como el promedio de todos los individuos pertenecientes a ese clúster.</li><li><strong>Iteración:</strong> Los pasos de asignación y actualización se repiten hasta que los centroides ya no cambian significativamente o se alcanza un número máximo de iteraciones.</li></ol><p class="mt-3"><strong>Valor Agregado de K-Means en el Análisis de Burnout:</strong></p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>Identificación de Perfiles de Burnout:</strong> K-Means permite descubrir perfiles o arquetipos de burnout que podrían no ser evidentes al analizar solo los promedios generales o las distribuciones de niveles. Por ejemplo, se podrían identificar grupos con "alto AE y DP, pero RP moderada" vs. "AE moderado, DP bajo, RP baja".</li><li><strong>Comprensión de la Heterogeneidad:</strong> El burnout no es un fenómeno homogéneo. K-Means ayuda a visualizar cómo diferentes subgrupos dentro de una población experimentan el burnout de manera distinta.</li><li><strong>Intervenciones Focalizadas:</strong> Al identificar perfiles específicos, las organizaciones pueden diseñar e implementar intervenciones más personalizadas y efectivas, dirigidas a las necesidades particulares de cada grupo, en lugar de aplicar soluciones genéricas.</li><li><strong>Segmentación para Investigación:</strong> Para los investigadores, el clustering puede ayudar a segmentar muestras para análisis más profundos, explorando factores asociados a cada perfil de burnout.</li><li><strong>Herramienta Exploratoria:</strong> Proporciona una forma exploratoria de entender la estructura subyacente en los datos de burnout, generando hipótesis para futuras investigaciones o acciones.</li></ul><p class="mt-2">En MindGuard, el usuario selecciona el número de clústeres (K) deseado. La herramienta luego presenta los perfiles promedio de cada clúster en términos de las subescalas del MBI, facilitando la interpretación de las características distintivas de cada grupo.</p>` },
+                { id: "seguridadInfo", title: "Seguridad de la Información", icon: seguridadIcon, content: `<p>La seguridad y privacidad de sus datos son de suma importancia para MindGuard. Entendemos la sensibilidad de la información relacionada con el bienestar y el burnout de los empleados o participantes de un estudio.</p><p class="mt-2"><strong>Principios Clave de Seguridad en MindGuard:</strong></p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>Procesamiento Local en el Navegador:</strong> Esta es la característica de seguridad más fundamental de MindGuard. Cuando usted carga un archivo CSV, <strong>todos los cálculos, análisis y visualizaciones se realizan directamente en su navegador web</strong> (del lado del cliente).</li><li><strong>No Transmisión de Datos Crudos:</strong> Su archivo CSV original y los datos individuales que contiene <strong>NO se transmiten ni se almacenan en ningún servidor externo</strong>. La información permanece en su máquina local durante toda la sesión de uso.</li><li><strong>Sin Creación de Cuentas ni Almacenamiento Persistente:</strong> MindGuard está diseñado como una herramienta de análisis inmediato. No requiere la creación de cuentas de usuario y no guarda sus datos o resultados en nuestros sistemas una vez que cierra la pestaña o el navegador. Cada sesión es independiente.</li><li><strong>Uso de Librerías Confiables:</strong> La herramienta utiliza librerías de JavaScript bien establecidas y de código abierto (como PapaParse para CSV y Chart.js para gráficos) que son ampliamente utilizadas y revisadas por la comunidad de desarrolladores.</li><li><strong>Conexión Segura (HTTPS):</strong> Si bien los datos no se transmiten, la propia aplicación MindGuard (si estuviera alojada en un servidor web) debería servirse a través de HTTPS para garantizar que el código de la aplicación que se ejecuta en su navegador sea auténtico y no haya sido manipulado durante la transmisión. (Nota: Esto aplica al despliegue de la herramienta, no al procesamiento de datos en sí que es local).</li></ul><p class="mt-3"><strong>Responsabilidad del Usuario:</strong></p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>Gestión de Archivos CSV:</strong> Usted es responsable de la seguridad de sus archivos CSV antes de cargarlos en la herramienta y después de cualquier exportación que realice. Asegúrese de almacenar sus archivos de datos en ubicaciones seguras y de acuerdo con las políticas de privacidad de su organización.</li><li><strong>Uso en Entornos Seguros:</strong> Recomendamos utilizar MindGuard en un entorno informático seguro, con software antivirus actualizado y buenas prácticas de seguridad digital.</li></ul><p class="mt-3"><strong>Limitaciones y Transparencia:</strong></p><p>MindGuard es una herramienta de análisis y visualización. No ofrece garantías absolutas de seguridad más allá del procesamiento local. El código fuente de la herramienta (HTML, CSS, JavaScript) es visible y puede ser inspeccionado por usuarios con conocimientos técnicos para verificar su funcionamiento.</p><p class="mt-2">Al utilizar MindGuard, usted confía en el principio de que sus datos sensibles permanecen bajo su control y no son expuestos a servidores externos a través de la propia herramienta. Para cualquier duda sobre la seguridad, puede consultar la documentación o contactar al equipo de desarrollo.</p>` },
+            ];
+            document.getElementById('accordionMetodologia').innerHTML = metodologiaItems.map(item => buildAccordionItem(item.id, item.title, item.icon, item.content, item.isOpen)).join('');
+
+            const guiaIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>`;
+            const usoIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" /></svg>`;
+            const faqIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z" /></svg>`;
+            const glosarioIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>`;
+            const formsIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25V6.75A2.25 2.25 0 0 0 17.25 4.5H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5A2.25 2.25 0 0 0 6.75 19.5H17.25A2.25 2.25 0 0 0 19.5 17.25v-2.625m-7.5-3.375V15M12 15l-3.75-3.75M12 15l3.75-3.75M3 19.5h18" /></svg>`;
+
+
+            const guiaItems = [
+                { id: "googleforms", title: "0. Recolección de Datos con Google Forms (Recomendado)", icon: formsIcon, content: `
+                    <p>Una forma eficiente de recolectar las respuestas del MBI-HSS es utilizando Google Forms. A continuación, se describe el proceso:</p>
+                    <ol class="list-decimal list-inside mt-2 space-y-2">
+                        <li>
+                            <strong>Crear una Copia del Formulario Plantilla:</strong>
+                            <p class="mt-1">Puedes utilizar una plantilla pre-configurada del MBI-HSS. Si tienes un enlace a una plantilla (por ejemplo, proporcionado por tu organización o investigador), ábrelo y busca la opción para "Hacer una copia" (generalmente en el menú de Archivo o los tres puntos). Esto creará una versión editable en tu propia cuenta de Google Drive.</p>
+                            <p class="mt-1">Si no tienes una plantilla, puedes crear un nuevo formulario en <a href="https://forms.google.com" target="_blank" class="text-mental-primary hover:underline">Google Forms</a>. Deberás añadir:
+                                <ul class="list-disc list-inside ml-4 mt-1 text-sm">
+                                    <li>Un campo para un identificador único del participante (ID).</li>
+                                    <li>Los 22 ítems del MBI-HSS como preguntas de opción múltiple o escala lineal, asegurándote que las opciones de respuesta correspondan a la escala Likert (Nunca, Pocas veces al año, etc.) y sus valores numéricos (0-6).</li>
+                                </ul>
+                            </p>
+                        </li>
+                        <li>
+                            <strong>Distribuir el Formulario:</strong>
+                            <p class="mt-1">Una vez que tu formulario esté listo, compártelo con los participantes para que lo completen. Puedes obtener un enlace para compartir desde el botón "Enviar" en Google Forms.</p>
+                        </li>
+                        <li>
+                            <strong>Acceder a las Respuestas:</strong>
+                            <p class="mt-1">En la pestaña "Respuestas" de tu formulario en Google Forms, verás un resumen de los datos. Para exportarlos:</p>
+                            <ul class="list-disc list-inside ml-4 mt-1 text-sm">
+                                <li>Haz clic en el ícono verde de "Hojas de cálculo" (Crear hoja de cálculo).</li>
+                                <li>Elige "Crear una nueva hoja de cálculo" o "Seleccionar hoja de cálculo existente". Esto vinculará tus respuestas a una Google Sheet.</li>
+                            </ul>
+                        </li>
+                        <li>
+                            <strong>Convertir la Hoja de Cálculo a CSV:</strong>
+                            <p class="mt-1">Abre la Google Sheet que contiene las respuestas. Para convertirla a formato CSV (compatible con MindGuard):</p>
+                            <ul class="list-disc list-inside ml-4 mt-1 text-sm">
+                                <li>Ve a "Archivo" > "Descargar" > "Valores separados por comas (.csv)".</li>
+                                <li>Esto descargará el archivo CSV a tu computadora.</li>
+                            </ul>
+                        </li>
+                        <li>
+                            <strong>Verificar el Formato del CSV:</strong>
+                            <p class="mt-1">Abre el archivo CSV descargado con un editor de hojas de cálculo (como Excel, Google Sheets, LibreOffice Calc) o un editor de texto para asegurarte de que:
+                                <ul class="list-disc list-inside ml-4 mt-1 text-xs">
+                                    <li>La primera columna sea el ID del participante.</li>
+                                    <li>Las siguientes 22 columnas contengan las respuestas a los ítems del MBI, en el orden correcto.</li>
+                                    <li>Las respuestas estén en el formato esperado por MindGuard (texto como "Nunca", "Pocas veces al año o menos", etc., o los números 0-6). La herramienta puede mapear los textos comunes.</li>
+                                    <li>El archivo esté codificado en UTF-8 y use comas (,) o punto y coma (;) como delimitador.</li>
+                                </ul>
+                            </p>
+                        </li>
+                    </ol>
+                    <p class="mt-3 text-sm">Este proceso facilita la recolección estandarizada de datos y su preparación para el análisis en MindGuard.</p>`, isOpen: true 
+                },
+                { id: "csv", title: "1. Preparación del Archivo CSV (Manual)", icon: guiaIcon, content: `<p>Si no utilizas Google Forms o ya tienes tus datos en otro formato, asegúrate de que tu archivo CSV cumpla con los siguientes requisitos para ser procesado correctamente por MindGuard:</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>Codificación:</strong> El archivo debe estar guardado con codificación UTF-8. Esto es crucial para asegurar que todos los caracteres, especialmente si hay tildes o caracteres especiales en los IDs, se lean correctamente.</li><li><strong>Delimitador:</strong> Las columnas deben estar separadas por comas (,) o punto y coma (;). La herramienta intentará detectar el delimitador automáticamente.</li><li><strong>Estructura de las Columnas:</strong><ol class="list-decimal list-inside ml-4 mt-1 text-sm"><li>La primera columna <strong>DEBE</strong> ser un identificador único para cada participante (ID). Puede ser numérico o alfanumérico.</li><li>Las siguientes 22 columnas <strong>DEBEN</strong> corresponder a las respuestas de los 22 ítems del MBI-HSS, en su orden numérico estándar (Item 1, Item 2, ..., Item 22).</li></ol></li><li><strong>Formato de las Respuestas:</strong> Las celdas de respuesta para cada ítem deben contener los valores de la escala Likert. MindGuard puede interpretar: <ul class="list-disc list-inside ml-4 mt-1 text-xs"><li><strong>Textos descriptivos (recomendado para claridad):</strong> "Nunca", "Pocas veces al año o menos" (o variantes como "Pocas veces al año"), "Una vez al mes o menos" (o "Una vez al mes"), "Pocas veces a la semana", "Una vez a la semana", "Todos los días". La herramienta es flexible con pequeñas variaciones en estos textos.</li><li><strong>Valores numéricos directos:</strong> 0 (Nunca), 1 (Pocas veces al año o menos), 2 (Una vez al mes o menos), 3 (Pocas veces a la semana), 4 (Una vez a la semana), 6 (Todos los días). <strong>Nota: El valor 5 no se utiliza en la escala MBI estándar de 0-6.</strong></li></ul></li><li><strong>Encabezados (Opcional pero Recomendado):</strong> Es buena práctica incluir una fila de encabezado que nombre cada columna (ej. "ID", "Item1", "Item2", ..., "Item22"). La herramienta está diseñada para omitir la primera fila si detecta que son encabezados.</li><li><strong>Datos Faltantes:</strong> Si hay respuestas faltantes para algún ítem, es mejor dejar la celda vacía. MindGuard marcará a los individuos con datos faltantes y no calculará sus subescalas.</li></ul><p class="mt-2"><strong>Ejemplo de estructura de CSV (con textos):</strong></p><pre class="bg-slate-100 p-3 rounded text-xs mt-1 overflow-x-auto"><code>ID,Item1,Item2,Item3,...,Item22\nP001,Nunca,Pocas veces al año o menos,Una vez al mes,...,Todos los días\nP002,Una vez a la semana,Todos los días,Pocas veces a la semana,...,Nunca</code></pre><p class="mt-2"><strong>Ejemplo de estructura de CSV (con números):</strong></p><pre class="bg-slate-100 p-3 rounded text-xs mt-1 overflow-x-auto"><code>ID,Item1,Item2,Item3,...,Item22\n101,0,1,2,...,6\n102,4,6,3,...,0</code></pre><p class="mt-2">Verificar cuidadosamente estos puntos antes de subir el archivo asegurará un análisis exitoso.</p>` },
+                { id: "uso", title: "2. Uso de la Herramienta MindGuard", icon: usoIcon, content: `<p>Utilizar MindGuard es un proceso sencillo e intuitivo. Sigue estos pasos para analizar tus datos del MBI-HSS:</p><ol class="list-decimal list-inside mt-2 space-y-3"><li><strong>Navegar a la Sección "Herramienta":</strong> En el menú principal, haz clic en "Herramienta". Esto te llevará a la interfaz de carga de archivos y análisis.</li><li><strong>Seleccionar tu Archivo CSV:</strong> <ul class="list-disc list-inside ml-4 mt-1 text-sm"><li>Haz clic en el botón "Seleccionar archivo" o en el área designada para la carga.</li><li>Se abrirá un cuadro de diálogo de tu sistema operativo. Navega hasta la ubicación de tu archivo CSV (preparado según las instrucciones de la sección "Preparación del Archivo CSV"), selecciónalo y haz clic en "Abrir".</li><li>El nombre del archivo seleccionado aparecerá junto al botón.</li></ul></li><li><strong>Procesar el Archivo CSV:</strong> <ul class="list-disc list-inside ml-4 mt-1 text-sm"><li>Una vez seleccionado el archivo, haz clic en el botón "Procesar Archivo CSV".</li><li>La herramienta leerá y analizará los datos. Este proceso es rápido y se realiza localmente en tu navegador. Un indicador de carga podría aparecer brevemente.</li></ul></li><li><strong>Interpretar Resultados del MBI (Tabla y Gráficos):</strong> <ul class="list-disc list-inside ml-4 mt-1 text-sm"><li>Si el archivo se procesa correctamente, aparecerá la sección "Resultados Detallados MBI".</li><li><strong>Tabla de Resultados:</strong> Verás una tabla con cada ID de participante, sus puntuaciones directas en Agotamiento Emocional (AE), Despersonalización (DP) y Realización Personal (RP), y el nivel de burnout (Bajo, Moderado, Alto) para cada subescala. Las observaciones indicarán errores si los hubo para algún individuo. Puedes usar la barra de desplazamiento horizontal si la tabla es muy ancha.</li><li><strong>Gráficos MBI:</strong> Se mostrarán dos gráficos: <ul class="list-disc list-inside ml-6 mt-1 text-xs"><li><em>Promedio Subescalas MBI:</em> Un gráfico de barras mostrando la puntuación promedio de AE, DP y RP para todo el grupo.</li><li><em>Distribución Niveles de Burnout:</em> Un gráfico de barras (generalmente apilado o agrupado) mostrando cuántos individuos caen en los niveles Bajo, Moderado y Alto para cada subescala.</li></ul></li><li>Analiza estos resultados para obtener una visión general del estado de burnout en tu muestra.</li></ul></li><li><strong>Realizar Análisis de Clustering (K-Means):</strong> <ul class="list-disc list-inside ml-4 mt-1 text-sm"><li>Si se procesaron datos válidos del MBI (al menos suficientes para el número mínimo de clústeres), se activará la sección "Análisis de Clustering (K-Means)".</li><li><strong>Seleccionar K (Número de Clústeres):</strong> Introduce el número de clústeres (grupos) que deseas identificar en tus datos. El valor por defecto suele ser 3, pero puedes ajustarlo (generalmente entre 2 y 10, dependiendo del tamaño de tu muestra y la variabilidad esperada).</li><li><strong>Presionar "Realizar Clustering":</strong> Haz clic en este botón. La herramienta aplicará el algoritmo K-Means a las puntuaciones de las subescalas MBI.</li></ul></li><li><strong>Interpretar Perfiles de Clústeres (Tabla y Gráficos):</strong> <ul class="list-disc list-inside ml-4 mt-1 text-sm"><li>Aparecerá la sección "Resultados del Clustering".</li><li><strong>Tabla de Perfiles de Clústeres:</strong> Mostrará cada clúster identificado, el número de individuos en él, las puntuaciones promedio de AE, DP y RP para ese clúster, un perfil tentativo (ej. "AE Alto, DP Moderado, RP Bajo") y una interpretación básica del perfil.</li><li><strong>Gráficos de Clustering:</strong> <ul class="list-disc list-inside ml-6 mt-1 text-xs"><li><em>Distribución de Individuos por Clúster:</em> Un gráfico (ej. circular o de barras) mostrando el tamaño relativo de cada clúster.</li><li><em>Perfiles Medios de Clúster (Radar):</em> Un gráfico radar donde cada eje representa una subescala del MBI (AE, DP, RP), y cada clúster se traza como una forma poligonal. Esto permite una comparación visual rápida de los perfiles de burnout entre los clústeres. Un valor más alto en AE y DP, y más bajo en RP (o RP invertida en el gráfico para mostrar "falta de RP") indica mayor severidad del burnout.</li></ul></li><li>Analiza estos perfiles para entender los diferentes subgrupos de burnout en tu muestra y sus características distintivas.</li></ul></li><li><strong>Descargar Informe PDF (Opcional):</strong> <ul class="list-disc list-inside ml-4 mt-1 text-sm"><li>Si los resultados se han generado, aparecerá un botón "Descargar Informe PDF".</li><li>Al hacer clic, se generará un archivo PDF conteniendo las tablas y gráficos de los resultados del MBI y del clustering para que puedas guardarlos o compartirlos.</li></ul></li></ol><p class="mt-3">Recuerda que todos los análisis son exploratorios y deben ser interpretados con cautela y, preferiblemente, con el apoyo de un profesional cualificado.</p>` },
+                { id: "faq", title: "3. Solución de Problemas (FAQ)", icon: faqIcon, content: `<dl class="space-y-3"><div class="border-b pb-2"><dt class="font-semibold text-mental-text">P: El archivo CSV no carga o aparece un error al procesar.</dt><dd class="text-xs mt-1"><strong>R:</strong> Verifica lo siguiente:<ul class="list-disc list-inside ml-4 mt-1"><li>Asegúrate de que el archivo sea realmente un .csv (no .xls o .xlsx).</li><li>Confirma que la codificación sea UTF-8. Puedes re-guardar el archivo desde un editor de hojas de cálculo especificando esta codificación.</li><li>Revisa que el delimitador sea coma (,) o punto y coma (;).</li><li>Asegúrate de que no haya filas completamente vacías al inicio o en medio del archivo que puedan confundir al parser.</li><li>Verifica que la estructura de columnas (ID + 22 ítems) sea correcta y que no falten columnas.</li></ul></dd></div><div class="border-b pb-2"><dt class="font-semibold text-mental-text">P: Algunos individuos muestran "Respuestas no puntuables" o "Error al calcular subescalas".</dt><dd class="text-xs mt-1"><strong>R:</strong> Esto generalmente ocurre si:<ul class="list-disc list-inside ml-4 mt-1"><li>Hay celdas vacías para uno o más de los 22 ítems de ese individuo.</li><li>Alguna respuesta no corresponde a los textos o números esperados (ej. "Quizás" en lugar de una opción de frecuencia válida, o un número fuera del rango 0-6).</li><li>La fila del individuo tiene menos de 22 respuestas después del ID.</li></ul>Revisa los datos de esos individuos en tu archivo CSV original.</dd></div><div class="border-b pb-2"><dt class="font-semibold text-mental-text">P: La sección de clustering no se activa o dice "Datos insuficientes".</dt><dd class="text-xs mt-1"><strong>R:</strong> El análisis de clustering requiere un número mínimo de individuos con datos MBI válidos. Este mínimo es generalmente igual o mayor que el número de clústeres (K) que deseas formar. Si tienes muy pocos participantes válidos, el clustering no será significativo o posible. Asegúrate de tener suficientes datos completos y correctos.</dd></div><div class="border-b pb-2"><dt class="font-semibold text-mental-text">P: Los gráficos no se muestran correctamente o se ven cortados.</dt><dd class="text-xs mt-1"><strong>R:</strong> Intenta recargar la página. Si el problema persiste, podría ser un problema de compatibilidad con tu navegador o alguna extensión que interfiera. Prueba en un navegador diferente o en modo incógnito. Asegúrate de que tu navegador esté actualizado.</dd></div><div><dt class="font-semibold text-mental-text">P: ¿Cómo interpreto el gráfico radar de los clústeres?</dt><dd class="text-xs mt-1"><strong>R:</strong> El gráfico radar muestra el perfil promedio de cada clúster. Cada eje representa una subescala del MBI (AE, DP, RP). Un punto más alejado del centro en los ejes de AE y DP indica mayor agotamiento y despersonalización (más burnout). Para RP, un punto más cercano al centro indica baja realización personal (más burnout), mientras que un punto más alejado indica alta realización (menos burnout). Compara las "formas" de los polígonos de cada clúster para ver sus diferencias.</dd></div></dl>` },
+                { id: "glosario", title: "4. Glosario de Términos", icon: glosarioIcon, content: `<dl class="space-y-2 text-sm"><div class="border-b pb-1"><dt class="font-semibold text-mental-text">MBI-HSS:</dt><dd class="text-xs text-mental-text-light">Maslach Burnout Inventory - Human Services Survey. Es la versión del inventario de burnout de Maslach diseñada específicamente para profesionales del sector de servicios humanos (salud, educación, trabajo social, etc.).</dd></div><div class="border-b pb-1"><dt class="font-semibold text-mental-text">Burnout (Síndrome de Desgaste Profesional):</dt><dd class="text-xs text-mental-text-light">Respuesta prolongada al estrés laboral crónico, caracterizada por agotamiento emocional, despersonalización y una disminuida realización personal.</dd></div><div class="border-b pb-1"><dt class="font-semibold text-mental-text">Agotamiento Emocional (AE):</dt><dd class="text-xs text-mental-text-light">Una de las tres dimensiones del burnout. Se refiere a la sensación de estar emocionalmente exhausto y sin recursos debido a las demandas del trabajo.</dd></div><div class="border-b pb-1"><dt class="font-semibold text-mental-text">Despersonalización (DP):</dt><dd class="text-xs text-mental-text-light">Segunda dimensión del burnout. Implica el desarrollo de actitudes cínicas, distantes e impersonales hacia los receptores del servicio o cuidado.</dd></div><div class="border-b pb-1"><dt class="font-semibold text-mental-text">Realización Personal (RP) o Logro Personal:</dt><dd class="text-xs text-mental-text-light">Tercera dimensión del burnout. Se refiere a los sentimientos de competencia, eficacia y logro en el trabajo. Una <strong>baja</strong> realización personal es indicativa de burnout.</dd></div><div class="border-b pb-1"><dt class="font-semibold text-mental-text">Subescala:</dt><dd class="text-xs text-mental-text-light">Cada una de las dimensiones (AE, DP, RP) que componen el MBI. Cada subescala tiene su propia puntuación.</dd></div><div class="border-b pb-1"><dt class="font-semibold text-mental-text">Puntos de Corte:</dt><dd class="text-xs text-mental-text-light">Valores numéricos utilizados para clasificar las puntuaciones de las subescalas en niveles (Bajo, Moderado, Alto) de burnout.</dd></div><div class="border-b pb-1"><dt class="font-semibold text-mental-text">CSV (Comma-Separated Values):</dt><dd class="text-xs text-mental-text-light">Formato de archivo de texto plano donde los valores de una tabla se guardan separados por comas (u otro delimitador como punto y coma) para facilitar el intercambio de datos entre aplicaciones.</dd></div><div class="border-b pb-1"><dt class="font-semibold text-mental-text">Clustering:</dt><dd class="text-xs text-mental-text-light">Técnica de análisis de datos que agrupa elementos similares en conjuntos o "clústeres". En este contexto, agrupa a individuos con perfiles de burnout similares.</dd></div><div class="border-b pb-1"><dt class="font-semibold text-mental-text">K-Means:</dt><dd class="text-xs text-mental-text-light">Un algoritmo popular de clustering que particiona los datos en 'K' clústeres, donde 'K' es especificado por el usuario. Intenta minimizar la varianza dentro de cada clúster.</dd></div><div class="border-b pb-1"><dt class="font-semibold text-mental-text">Centroide:</dt><dd class="text-xs text-mental-text-light">El punto central (promedio) de un clúster. En K-Means, cada individuo es asignado al clúster cuyo centroide está más cercano.</dd></div><div class="border-b pb-1"><dt class="font-semibold text-mental-text">Puntuación Z (Estandarización):</dt><dd class="text-xs text-mental-text-light">Transformación de datos que expresa cada valor en términos de cuántas desviaciones estándar está por encima o por debajo de la media. Se utiliza para que variables con diferentes escalas contribuyan equitativamente al análisis.</dd></div><div><dt class="font-semibold text-mental-text">Gráfico Radar:</dt><dd class="text-xs text-mental-text-light">Tipo de gráfico que muestra datos multivariados en forma de un polígono bidimensional sobre ejes que parten de un punto central. Útil para comparar perfiles.</dd></div></dl>` },
+            ];
+            document.getElementById('accordionGuia').innerHTML = guiaItems.map(item => buildAccordionItem(item.id, item.title, item.icon, item.content, item.isOpen)).join('');
+
+            const legalIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21.75c2.436 0 4.709-.683 6.57-1.875M12 21.75c-2.436 0-4.709-.683-6.57-1.875M12 21.75V13.125c0-3.24.806-6.24 2.25-8.758M12 13.125c0-3.24-.806-6.24-2.25-8.758m13.125 8.758C24.291 11.064 24 7.79 24 6C24 2.686 21.314 0 18 0s-6 2.686-6 6c0 1.79.291 5.064 1.625 7.366M3.375 14.618C2.041 12.32 1.75 9.052 1.75 7.25c0-3.314 2.686-6 6-6s6 2.686 6 6c0 1.802-.291 5.064-1.625 7.366" /></svg>`;
+            const terminosIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>`;
+            const cookiesIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 0 0-3.7-3.7 4.875 4.875 0 0 0-7.324 0 4.006 4.006 0 0 0-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 0 0 3.7 3.7 4.875 4.875 0 0 0 7.324 0 4.006 4.006 0 0 0 3.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3-3 3" /></svg>`;
+            const disclaimerIcon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 mr-3 text-mental-primary"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.008v.008H12v-.008Z" /></svg>`;
+
+
+            const legalItems = [
+                { id: "privacidadLegal", title: "Política de Privacidad", icon: legalIcon, content: `<p><strong>Última Actualización:</strong> ${new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}</p><p class="mt-3">En MindGuard, la privacidad y seguridad de sus datos son nuestra máxima prioridad. Esta política describe cómo manejamos la información cuando utiliza nuestra herramienta de análisis.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">1. Recopilación y Uso de Información</h4><p>MindGuard está diseñada para operar completamente del lado del cliente (en su navegador web). Esto significa:</p><ul class="list-disc list-inside mt-2 space-y-1"><li><strong>No Recopilación de Datos Personales Identificables (PII) del Archivo CSV:</strong> Cuando carga un archivo CSV para análisis, dicho archivo y su contenido (incluyendo los IDs de los participantes y sus respuestas) <strong>no se transmiten, almacenan ni procesan en nuestros servidores ni en ningún servidor externo.</strong> Todo el procesamiento (cálculo de subescalas, clustering, generación de gráficos) ocurre localmente en su computadora utilizando el poder de procesamiento de su navegador.</li><li><strong>Información de Contacto (Formulario de Contacto):</strong> Si decide utilizar nuestro formulario de contacto, recopilaremos la información que nos proporcione (nombre, correo electrónico, asunto, mensaje) con el único fin de responder a su consulta o brindarle soporte. Esta información se maneja de forma confidencial y no se comparte con terceros sin su consentimiento, excepto si es requerido por ley. (Nota: Actualmente, el formulario es una simulación y no envía datos reales).</li><li><strong>Datos de Uso Anónimos (Potencial, si se implementara):</strong> En el futuro, podríamos considerar recopilar datos de uso anónimos y agregados (ej. funciones más utilizadas, errores comunes no ligados a datos de usuario) para mejorar la herramienta. Si esto se implementara, se haría de forma que no se pueda identificar a ningún usuario o los datos específicos de sus archivos, y se actualizaría esta política. Actualmente, no se realiza tal recopilación.</li></ul><h4 class="font-semibold text-mental-text mt-4 mb-2">2. Seguridad de los Datos</h4><p>Como se mencionó, el procesamiento de su archivo CSV es local. Por lo tanto, la seguridad de esos datos mientras están en su sistema y antes de cargarlos es su responsabilidad. Recomendamos:</p><ul class="list-disc list-inside mt-2 space-y-1"><li>Utilizar contraseñas seguras y mantener su sistema operativo y navegador actualizados.</li><li>No utilizar MindGuard en computadoras públicas o no confiables si maneja datos altamente sensibles.</li></ul><p>La aplicación MindGuard en sí (el código que se ejecuta en su navegador) se entrega a través de canales seguros (HTTPS, si está desplegada en un servidor web) para proteger su integridad.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">3. Cookies</h4><p>MindGuard actualmente no utiliza cookies para rastrear usuarios o almacenar información personal entre sesiones. Si en el futuro se utilizaran cookies esenciales para el funcionamiento básico (ej. recordar preferencias de idioma, si se implementara), esta sección se detallaría.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">4. Derechos del Usuario</h4><p>Dado que no almacenamos los datos de sus archivos CSV, no existen datos que pueda solicitar para acceder, rectificar o eliminar de nuestros sistemas en relación con dichos archivos. Si nos ha contactado a través del formulario, puede solicitar la eliminación de su información de contacto escribiéndonos.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">5. Cambios a esta Política de Privacidad</h4><p>Podemos actualizar esta Política de Privacidad ocasionalmente. Le notificaremos cualquier cambio publicando la nueva política en esta página y actualizando la fecha de "Última Actualización". Le recomendamos revisar esta política periódicamente.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">6. Contacto</h4><p>Si tiene alguna pregunta sobre esta Política de Privacidad, por favor contáctenos a través de la sección "Contacto" de esta aplicación (teniendo en cuenta que el correo de ejemplo es para demostración).</p>`, isOpen: true },
+                { id: "tos", title: "Términos y Condiciones de Uso", icon: terminosIcon, content: `<p><strong>Última Actualización:</strong> ${new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}</p><p class="mt-3">Bienvenido a MindGuard. Al acceder y utilizar esta herramienta de análisis, usted acepta estar sujeto a los siguientes Términos y Condiciones de Uso ("Términos"). Si no está de acuerdo con alguna parte de estos términos, no debe utilizar la herramienta.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">1. Descripción del Servicio</h4><p>MindGuard ("la Herramienta") es una aplicación web que permite a los usuarios cargar archivos CSV conteniendo datos del Maslach Burnout Inventory (MBI-HSS) para realizar análisis de subescalas, niveles de burnout y clustering K-Means. Todo el procesamiento de datos se realiza localmente en el navegador del usuario.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">2. Uso Aceptable</h4><ul class="list-disc list-inside mt-2 space-y-1"><li>Usted se compromete a utilizar la Herramienta únicamente con fines lícitos y de acuerdo con estos Términos.</li><li>Usted es el único responsable de la legalidad, exactitud, integridad y fiabilidad de los datos que carga en la Herramienta. Debe asegurarse de tener los derechos y consentimientos necesarios para procesar dichos datos.</li><li>No utilizará la Herramienta de ninguna manera que pueda dañar, deshabilitar, sobrecargar o deteriorar la Herramienta (aunque el procesamiento es local, se refiere a no intentar explotar vulnerabilidades del código frontend).</li></ul><h4 class="font-semibold text-mental-text mt-4 mb-2">3. Propiedad Intelectual</h4><p>La Herramienta y su contenido original (excluyendo los datos cargados por el usuario), características y funcionalidad son y seguirán siendo propiedad exclusiva de los desarrolladores de MindGuard y sus licenciantes. Esto incluye el diseño, la interfaz de usuario, los logotipos, textos (excluyendo el contenido generado dinámicamente a partir de sus datos) y el código subyacente. El logo de MindGuard y el nombre "MindGuard" son marcas registradas o en proceso de ello.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">4. Privacidad de los Datos</h4><p>Como se detalla en nuestra Política de Privacidad, la Herramienta procesa los datos de los archivos CSV localmente en su navegador. No transmitimos ni almacenamos sus datos crudos.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">5. Descargo de Responsabilidad (Disclaimer)</h4><p>La Herramienta se proporciona "TAL CUAL" y "SEGÚN DISPONIBILIDAD", sin garantías de ningún tipo, ya sean expresas o implícitas, incluyendo, pero no limitado a, garantías implícitas de comerciabilidad, idoneidad para un propósito particular, no infracción o curso de rendimiento.</p><p class="mt-2">Los desarrolladores de MindGuard no garantizan que:</p><ul class="list-disc list-inside mt-1 space-y-1"><li>La Herramienta funcionará ininterrumpidamente, de forma segura o estará disponible en cualquier momento o lugar en particular.</li><li>Cualquier error o defecto será corregido.</li><li>Los resultados del uso de la Herramienta serán precisos, fiables o adecuados para sus necesidades específicas.</li><li>La Herramienta esté libre de virus u otros componentes dañinos (aunque nos esforzamos por asegurar la integridad del código que servimos).</li></ul><p class="mt-2">Los análisis y resultados generados por MindGuard son de naturaleza exploratoria y deben ser interpretados con cautela. No constituyen asesoramiento profesional, médico, psicológico o legal. Las decisiones basadas en la información obtenida de la Herramienta son de su exclusiva responsabilidad. Siempre consulte a profesionales cualificados para la interpretación y aplicación de los resultados en contextos específicos.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">6. Limitación de Responsabilidad</h4><p>En ningún caso los desarrolladores de MindGuard, ni sus directores, empleados, socios, agentes, proveedores o afiliados, serán responsables por daños indirectos, incidentales, especiales, consecuentes o punitivos, incluyendo, sin limitación, pérdida de beneficios, datos, uso, buena voluntad u otras pérdidas intangibles, resultantes de (i) su acceso o uso o incapacidad para acceder o usar la Herramienta; (ii) cualquier conducta o contenido de terceros en la Herramienta; (iii) cualquier contenido obtenido de la Herramienta; y (iv) el acceso no autorizado, uso o alteración de sus transmisiones o contenido, ya sea basado en garantía, contrato, agravio (incluyendo negligencia) o cualquier otra teoría legal, ya sea que hayamos sido informados o no de la posibilidad de tales daños.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">7. Modificaciones a los Términos</h4><p>Nos reservamos el derecho, a nuestra sola discreción, de modificar o reemplazar estos Términos en cualquier momento. Si una revisión es material, intentaremos proporcionar un aviso con al menos 30 días de anticipación antes de que los nuevos términos entren en vigor. Lo que constituye un cambio material será determinado a nuestra sola discreción.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">8. Ley Aplicable</h4><p>Estos Términos se regirán e interpretarán de acuerdo con las leyes del país/jurisdicción de los desarrolladores, sin tener en cuenta sus disposiciones sobre conflicto de leyes.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">9. Contacto</h4><p>Si tiene alguna pregunta sobre estos Térmnos, por favor contáctenos.</p>` },
+                { id: "cookies", title: "Política de Cookies", icon: cookiesIcon, content: `<p><strong>Última Actualización:</strong> ${new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}</p><p class="mt-3">Esta Política de Cookies explica qué son las cookies y cómo MindGuard ("nosotros", "nuestro" o "la Herramienta") las utiliza o podría utilizarlas. Le recomendamos leer esta política para que pueda entender el tipo de cookies que usamos, la información que podríamos recopilar usando cookies y cómo se usa esa información.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">¿Qué son las Cookies?</h4><p>Las cookies son pequeños archivos de texto que se almacenan en su navegador (por ejemplo, Chrome, Firefox, Safari) o dispositivo cuando visita ciertos sitios web. Permiten que el sitio web recuerde información sobre su visita, como sus preferencias de idioma o información de inicio de sesión, lo que puede facilitar su próxima visita y hacer que el sitio sea más útil para usted.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">¿Cómo Utiliza MindGuard las Cookies?</h4><p>Actualmente, MindGuard está diseñada para ser una aplicación que funciona principalmente del lado del cliente y <strong>no utiliza cookies para el seguimiento de usuarios, publicidad, o para almacenar información personal identificable entre sesiones de navegación.</strong></p><p class="mt-2">En su estado actual, la funcionalidad principal de MindGuard (carga de CSV, análisis de datos, visualización) no depende de cookies persistentes.</p><p class="mt-2"><strong>Posibles Usos Futuros (Cookies Esenciales o de Funcionalidad):</strong></p><p>Si en futuras versiones de MindGuard se implementan características que requieran un mínimo de persistencia de estado para mejorar la experiencia del usuario (por ejemplo, recordar una preferencia de tema oscuro/claro, o el último número de clústeres K seleccionado DENTRO de una misma sesión si la página se recarga accidentalmente), podríamos utilizar:</p><ul class="list-disc list-inside mt-1 space-y-1"><li><strong>Cookies de Sesión:</strong> Estas son temporales y se eliminan cuando cierra su navegador. Podrían usarse para mantener el estado de la aplicación durante una única sesión activa.</li><li><strong>Cookies Persistentes (para funcionalidad básica):</strong> Si se implementan preferencias que deban recordarse entre sesiones (y solo si es estrictamente necesario para la funcionalidad), se usarían cookies persistentes. En tal caso, esta política se actualizaría para detallar su propósito específico y duración.</li></ul><p><strong>No utilizamos cookies de terceros para publicidad o seguimiento analítico invasivo.</strong></p><h4 class="font-semibold text-mental-text mt-4 mb-2">Sus Opciones Respecto a las Cookies</h4><p>La mayoría de los navegadores web le permiten controlar las cookies a través de la configuración de su navegador. Puede:</p><ul class="list-disc list-inside mt-1 space-y-1"><li>Ver qué cookies tiene y eliminarlas individualmente.</li><li>Bloquear cookies de terceros.</li><li>Bloquear cookies de sitios particulares.</li><li>Bloquear todas las cookies para que no se establezcan.</li><li>Eliminar todas las cookies cuando cierre su navegador.</li></ul><p>Tenga en cuenta que si elige bloquear o eliminar cookies, algunas partes de MindGuard (especialmente si se añaden funcionalidades dependientes de cookies en el futuro) podrían no funcionar correctamente.</p><p>Puede encontrar más información sobre cómo gestionar cookies en los navegadores más populares aquí:</p><ul class="list-disc list-inside mt-1 space-y-1 text-sm"><li><a href="https://support.google.com/chrome/answer/95647" target="_blank" class="text-mental-primary hover:underline">Google Chrome</a></li><li><a href="https://support.mozilla.org/es/kb/habilitar-y-deshabilitar-cookies-sitios-web-rastrear-preferencias" target="_blank" class="text-mental-primary hover:underline">Mozilla Firefox</a></li><li><a href="https://support.apple.com/es-es/guide/safari/sfri11471/mac" target="_blank" class="text-mental-primary hover:underline">Apple Safari</a></li><li><a href="https://support.microsoft.com/es-es/windows/eliminar-y-administrar-cookies-168dab11-0753-043d-7c16-ede5947fc64d" target="_blank" class="text-mental-primary hover:underline">Microsoft Edge</a></li></ul><h4 class="font-semibold text-mental-text mt-4 mb-2">Cambios a esta Política de Cookies</h4><p>Podemos actualizar esta Política de Cookies de vez en cuando. Cualquier cambio se publicará en esta página con una fecha de actualización revisada.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">Contacto</h4><p>Si tiene alguna pregunta sobre nuestra política de cookies, por favor contáctenos.</p>` },
+                { id: "disclaimer", title: "Descargo de Responsabilidad Importante", icon: disclaimerIcon, content: `<p><strong>Última Actualización:</strong> ${new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' })}</p><p class="mt-3">La herramienta MindGuard se proporciona con fines informativos y de análisis exploratorio de datos relacionados con el Maslach Burnout Inventory (MBI-HSS). Es fundamental que los usuarios comprendan y acepten las siguientes limitaciones y responsabilidades:</p><h4 class="font-semibold text-mental-text mt-4 mb-2">1. No Sustituye el Juicio Profesional</h4><p>Los resultados, visualizaciones e interpretaciones generados por MindGuard <strong>no constituyen un diagnóstico médico, psicológico, psiquiátrico ni de ningún otro tipo profesional.</strong> La herramienta está diseñada para ayudar en la visualización y el análisis inicial de datos, pero no reemplaza la evaluación, el diagnóstico, el consejo o el tratamiento proporcionado por profesionales de la salud cualificados (como psicólogos, psiquiatras, médicos) o consultores especializados en bienestar organizacional.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">2. Carácter Exploratorio de los Análisis</h4><p>Los análisis realizados, incluyendo el cálculo de subescalas, la determinación de niveles de burnout y el clustering K-Means, son de naturaleza exploratoria. Los puntos de corte para los niveles de burnout son referenciales y pueden variar según diferentes estudios o poblaciones. El clustering K-Means es un método que puede ser sensible a la elección del número de clústeres (K) y a la inicialización, y los perfiles identificados deben considerarse como hipótesis o patrones emergentes que pueden requerir una validación más profunda.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">3. Responsabilidad sobre los Datos de Entrada</h4><p>El usuario es el único responsable de la exactitud, integridad, legalidad y calidad de los datos cargados en MindGuard. La precisión de los resultados generados por la herramienta depende directamente de la calidad de los datos de entrada. Es responsabilidad del usuario asegurarse de que los datos del MBI-HSS se hayan recolectado y transcrito correctamente.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">4. Interpretación de Resultados</h4><p>La interpretación de los resultados debe realizarse con cautela y considerando el contexto específico de la población o muestra analizada. Factores como el entorno laboral, las características demográficas, y otros elementos contextuales que no son procesados por la herramienta pueden influir significativamente en los niveles de burnout. Se recomienda encarecidamente que la interpretación final y cualquier acción derivada de los resultados sean supervisadas o realizadas por personas con la formación y experiencia adecuadas en psicometría, salud ocupacional o psicología organizacional.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">5. Uso Ético y Consentimiento</h4><p>El usuario declara que tiene el derecho legal y los consentimientos necesarios (si aplica, según las regulaciones de protección de datos y ética de investigación) para utilizar los datos cargados en la herramienta. MindGuard no verifica la procedencia ni los permisos asociados a los datos.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">6. Sin Garantías</h4><p>MindGuard se proporciona "TAL CUAL", sin ninguna garantía expresa o implícita sobre su precisión, fiabilidad, idoneidad para un propósito particular o ausencia de errores. Si bien se han hecho esfuerzos para asegurar la corrección de los algoritmos implementados, no se puede garantizar la ausencia total de fallos o bugs.</p><h4 class="font-semibold text-mental-text mt-4 mb-2">7. Limitación de Responsabilidad</h4><p>Los desarrolladores de MindGuard no serán responsables de ninguna decisión tomada o acción realizada (o no realizada) basándose en la información o los resultados proporcionados por esta herramienta. El usuario asume toda la responsabilidad por el uso de la herramienta y sus resultados.</p><p class="mt-3"><strong>Al utilizar MindGuard, usted reconoce que ha leído, entendido y aceptado este descargo de responsabilidad en su totalidad.</strong></p>` },
+            ];
+            document.getElementById('accordionLegal').innerHTML = legalItems.map(item => buildAccordionItem(item.id, item.title, item.icon, item.content, item.isOpen)).join('');
+            
+            initializeAccordions();
+        }
+
+
+        // --- Navigation Logic ---
+        function showPage(pageId) {
+            document.querySelectorAll('.page-content').forEach(section => section.classList.add('hidden'));
+            const activePage = document.getElementById(`${pageId}-page`);
+            if (activePage) activePage.classList.remove('hidden');
+
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.remove('nav-link-active', 'bg-mental-primary-light', 'text-mental-primary');
+                link.classList.add('text-mental-text-light'); // Default state
+                if (link.getAttribute('href') === `#${pageId}` || link.dataset.target === pageId) {
+                    link.classList.add('nav-link-active', 'bg-mental-primary-light', 'text-mental-primary');
+                    link.classList.remove('text-mental-text-light');
+                }
+            });
+            window.scrollTo(0, 0);
+            if (history.pushState) {
+                history.pushState(null, null, `#${pageId}`);
+            } else {
+                window.location.hash = `#${pageId}`;
+            }
+        }
+
+        // --- MBI Analysis Logic ---
+        function normalizeResponse(responseText) {
+            if (typeof responseText !== 'string') return String(responseText || "").trim();
+            const trimmedText = responseText.trim();
+            if (trimmedText === "") return "";
+            const lowerCaseText = trimmedText.toLowerCase();
+            const map = {
+                'nunca': 'Nunca', 'pocas veces al año o menos': 'Pocas veces al año o menos',
+                'pocas veces al año': 'Pocas veces al año o menos', 'unas pocas veces al año': 'Pocas veces al año o menos',
+                'una vez al mes o menos': 'Una vez al mes o menos', 'una vez al mes': 'Una vez al mes o menos',
+                'pocas veces a la semana': 'Pocas veces a la semana', 'algunas veces a la semana': 'Pocas veces a la semana',
+                'pocas veces por semana': 'Pocas veces a la semana', 'una vez a la semana': 'Una vez a la semana',
+                'todos los días': 'Todos los días', 'todos los dias': 'Todos los días',
+                'casi todos los dias': 'Todos los días', 'siempre': 'Todos los días'
+            };
+            return map[lowerCaseText] || trimmedText;
+        }
+
+        function mapResponseToScore(normalizedText) {
+            if (normalizedText === "") return -1; // Missing data
+            const scoreMap = {
+                'Nunca': 0, 'Pocas veces al año o menos': 1, 'Una vez al mes o menos': 2,
+                'Pocas veces a la semana': 3, 'Una vez a la semana': 4, 'Todos los días': 6
+            };
+            // Also accept direct numbers as strings
+            if (scoreMap.hasOwnProperty(normalizedText)) return scoreMap[normalizedText];
+            const numericScore = parseInt(normalizedText, 10);
+            if (!isNaN(numericScore) && numericScore >= 0 && numericScore <= 6 && numericScore !== 5) { // MBI scale 0-6, excluding 5
+                return numericScore;
+            }
+            return -1; // Invalid response
+        }
+
+
+        function calculateSubscales(scoresArray) {
+            if (scoresArray.length !== TOTAL_MBI_ITEMS || scoresArray.some(s => s === -1)) return null;
+            const subscales = { AE: 0, DP: 0, RP: 0 };
+            MBI_ITEMS_CONFIG.AGOTAMIENTO_EMOCIONAL.forEach(itemNum => subscales.AE += scoresArray[itemNum - 1]);
+            MBI_ITEMS_CONFIG.DESPERSONALIZACION.forEach(itemNum => subscales.DP += scoresArray[itemNum - 1]);
+            MBI_ITEMS_CONFIG.REALIZACION_PERSONAL.forEach(itemNum => subscales.RP += scoresArray[itemNum - 1]);
+            return subscales;
+        }
+
+        function interpretBurnoutLevel(subscaleName, score) {
+            const c = cutoffs[subscaleName];
+            if (subscaleName === 'RP') { // Low score is problematic for RP
+                if (score <= c.low) return { level: 'Alto (Problemático)', originalLevel: 'Bajo', classKey: 'high', className: 'bg-rose-100 text-rose-700 border border-rose-300' };
+                if (score <= c.moderate) return { level: 'Moderado', originalLevel: 'Moderado', classKey: 'moderate', className: 'bg-amber-100 text-amber-700 border border-amber-300' };
+                return { level: 'Bajo (Favorable)', originalLevel: 'Alto', classKey: 'low', className: 'bg-emerald-100 text-emerald-700 border border-emerald-300' };
+            } else { // High score is problematic for AE, DP
+                if (score >= c.highThreshold) return { level: 'Alto', originalLevel: 'Alto', classKey: 'high', className: 'bg-rose-100 text-rose-700 border border-rose-300' };
+                if (score > c.low) return { level: 'Moderado', originalLevel: 'Moderado', classKey: 'moderate', className: 'bg-amber-100 text-amber-700 border border-amber-300' };
+                return { level: 'Bajo', originalLevel: 'Bajo', classKey: 'low', className: 'bg-emerald-100 text-emerald-700 border border-emerald-300' };
+            }
+        }
+        
+        function updateButtonState(buttonId, textId, spinnerId, iconId, newText, isProcessing) {
+            const button = document.getElementById(buttonId);
+            const textElem = document.getElementById(textId);
+            const spinnerElem = document.getElementById(spinnerId);
+            const iconElem = document.getElementById(iconId);
+
+            if (button && textElem && spinnerElem && iconElem) {
+                textElem.textContent = newText;
+                button.disabled = isProcessing;
+                spinnerElem.classList.toggle('hidden', !isProcessing);
+                iconElem.classList.toggle('hidden', isProcessing);
+            }
+        }
+
+
+        function processCSVDataInternal(csvData) {
+            mbiResultsTableBody.innerHTML = '';
+            clusteringResultsTableBody.innerHTML = '';
+            mbiResultsSection.classList.add('hidden');
+            clusteringAnalysisSection.classList.add('hidden');
+            clusteringResultsOutputSection.classList.add('hidden');
+            downloadPdfButton.classList.add('hidden');
+            processedMbiDataForClustering = [];
+            currentMbiData = []; // Reset for filtering/sorting
+
+            let validMbiSetsCount = 0;
+            const processedIndividuals = [];
+            const dataStartIndex = csvData[0].every(cell => isNaN(parseFloat(cell))) ? 1 : 0; // Detect header row
+
+            if (csvData.length <= dataStartIndex) {
+                showToast("El archivo CSV está vacío o solo contiene encabezados.", 'warning');
+                return;
+            }
+
+            for (let i = dataStartIndex; i < csvData.length; i++) {
+                const row = csvData[i];
+                if (!row || row.length === 0 || String(row[0] || "").trim() === "") continue; // Skip empty rows or rows without ID
+                const individualId = String(row[0]).trim();
+
+                if (row.length < (TOTAL_MBI_ITEMS + 1)) {
+                    processedIndividuals.push({ id: individualId, error: `Respuestas insuficientes (${row.length - 1} de ${TOTAL_MBI_ITEMS})` });
+                    continue;
+                }
+                const responses = row.slice(1, TOTAL_MBI_ITEMS + 1);
+                const scores = responses.map(r => mapResponseToScore(normalizeResponse(r)));
+                const individualData = { id: individualId, scores_raw: scores, subscales: null, interpretation: {} };
+
+                if (scores.some(s => s === -1) || scores.length !== TOTAL_MBI_ITEMS) {
+                    individualData.error = "Respuestas no puntuables o faltantes.";
+                } else {
+                    const subscales = calculateSubscales(scores);
+                    if (subscales) {
+                        individualData.subscales = subscales;
+                        individualData.interpretation.AE = interpretBurnoutLevel('AE', subscales.AE);
+                        individualData.interpretation.DP = interpretBurnoutLevel('DP', subscales.DP);
+                        individualData.interpretation.RP = interpretBurnoutLevel('RP', subscales.RP);
+                        validMbiSetsCount++;
+                        processedMbiDataForClustering.push({ id: individualId, AE: subscales.AE, DP: subscales.DP, RP: subscales.RP });
+                    } else {
+                        individualData.error = "Error al calcular subescalas.";
+                    }
+                }
+                processedIndividuals.push(individualData);
+            }
+            
+            currentMbiData = processedIndividuals; // Store for filtering/sorting
+            renderMbiResultsTable(currentMbiData);
+            renderMbiCharts(currentMbiData);
+            mbiResultsSection.classList.remove('hidden');
+            downloadPdfButton.classList.remove('hidden');
+            showToast(`Procesamiento MBI completado. Individuos válidos: ${validMbiSetsCount}.`, 'success');
+
+            if (validMbiSetsCount >= Math.max(2, parseInt(numClustersInput.value))) {
+                clusteringAnalysisSection.classList.remove('hidden');
+                showToast("Datos listos para clustering. Seleccione K y procese.", 'info');
+            } else {
+                clusteringAnalysisSection.classList.add('hidden'); // Ensure it's hidden if not enough data
+                clusteringResultsOutputSection.classList.add('hidden');
+                showToast("Datos válidos insuficientes para realizar clustering.", 'warning');
+            }
+        }
+
+        function renderMbiResultsTable(individualsData) {
+            mbiResultsTableBody.innerHTML = ''; // Clear previous results
+            if (individualsData.length === 0) {
+                mbiResultsTableBody.innerHTML = '<tr><td colspan="8" class="px-6 py-4 text-center text-mental-text-light">No hay datos MBI para mostrar.</td></tr>';
+                return;
+            }
+            individualsData.forEach(ind => {
+                const row = mbiResultsTableBody.insertRow();
+                row.className = 'border-b border-mental-border hover:bg-mental-primary-light transition-colors duration-150';
+                row.insertCell().textContent = ind.id;
+                if (ind.subscales) {
+                    row.insertCell().textContent = ind.subscales.AE;
+                    row.insertCell().innerHTML = `<span class="px-2 py-1 text-xs font-medium rounded-full ${ind.interpretation.AE.className}">${ind.interpretation.AE.level}</span>`;
+                    row.insertCell().textContent = ind.subscales.DP;
+                    row.insertCell().innerHTML = `<span class="px-2 py-1 text-xs font-medium rounded-full ${ind.interpretation.DP.className}">${ind.interpretation.DP.level}</span>`;
+                    row.insertCell().textContent = ind.subscales.RP;
+                    row.insertCell().innerHTML = `<span class="px-2 py-1 text-xs font-medium rounded-full ${ind.interpretation.RP.className}">${ind.interpretation.RP.level}</span>`;
+                    row.insertCell().textContent = ''; // Empty for observation if no error
+                } else {
+                    const cell = row.insertCell();
+                    cell.colSpan = 6;
+                    cell.className = 'text-center text-mental-text-light italic py-4';
+                    cell.textContent = 'No calculado';
+                    const errorCell = row.insertCell();
+                    errorCell.textContent = ind.error || 'Error desconocido';
+                    errorCell.classList.add('text-rose-500');
+                }
+                Array.from(row.cells).forEach(cell => cell.classList.add('px-6', 'py-4', 'whitespace-nowrap'));
+            });
+        }
+
+        // --- Chart Rendering ---
+        function destroyChart(canvasId) {
+            if (chartInstances[canvasId]) {
+                chartInstances[canvasId].destroy();
+                delete chartInstances[canvasId];
+            }
+        }
+
+        function renderMbiCharts(individualsData) {
+            const validResults = individualsData.filter(r => r.subscales);
+            if (validResults.length === 0) {
+                 // Optionally clear or hide charts if no valid data
+                destroyChart('mbiAveragesChart');
+                destroyChart('mbiLevelDistributionChart');
+                return;
+            }
+
+            // MBI Averages Chart
+            const totals = validResults.reduce((acc, curr) => {
+                acc.AE += curr.subscales.AE;
+                acc.DP += curr.subscales.DP;
+                acc.RP += curr.subscales.RP;
+                return acc;
+            }, { AE: 0, DP: 0, RP: 0 });
+
+            const averagesData = [
+                parseFloat((totals.AE / validResults.length).toFixed(2)),
+                parseFloat((totals.DP / validResults.length).toFixed(2)),
+                parseFloat((totals.RP / validResults.length).toFixed(2)),
+            ];
+            destroyChart('mbiAveragesChart');
+            chartInstances.mbiAveragesChart = new Chart(document.getElementById('mbiAveragesChart'), {
+                type: 'bar',
+                data: {
+                    labels: ['Agotamiento Emocional (AE)', 'Despersonalización (DP)', 'Realización Personal (RP)'],
+                    datasets: [{
+                        label: 'Promedio Score',
+                        data: averagesData,
+                        backgroundColor: [CHART_COLORS.AE, CHART_COLORS.DP, CHART_COLORS.RP],
+                        borderColor: [CHART_COLORS.AE.replace('0.7', '1'), CHART_COLORS.DP.replace('0.7', '1'), CHART_COLORS.RP.replace('0.7', '1')],
+                        borderWidth: 1,
+                        borderRadius: 5
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }}, scales: { y: { beginAtZero: true, grid: { color: '#e0f2fe'} }, x: { grid: { display: false }} } }
+            });
+
+            // MBI Level Distribution Chart
+            const distributions = { AE: {}, DP: {}, RP: {} };
+            // Ensure all possible levels (including RP specific) are initialized
+            ['Bajo', 'Moderado', 'Alto', 'Alto (Problemático)', 'Bajo (Favorable)'].forEach(level => {
+                distributions.AE[level] = 0; distributions.DP[level] = 0; distributions.RP[level] = 0;
+            });
+
+            validResults.forEach(r => {
+                distributions.AE[r.interpretation.AE.level]++;
+                distributions.DP[r.interpretation.DP.level]++;
+                distributions.RP[r.interpretation.RP.level]++;
+            });
+            
+            const levelData = {
+                labels: ['Bajo/Favorable', 'Moderado', 'Alto/Problemático'],
+                datasets: [
+                    { label: 'AE', data: [distributions.AE.Bajo, distributions.AE.Moderado, distributions.AE.Alto], backgroundColor: CHART_COLORS.AE, borderRadius: 5 },
+                    { label: 'DP', data: [distributions.DP.Bajo, distributions.DP.Moderado, distributions.DP.Alto], backgroundColor: CHART_COLORS.DP, borderRadius: 5 },
+                    { label: 'RP', data: [distributions.RP['Bajo (Favorable)'], distributions.RP.Moderado, distributions.RP['Alto (Problemático)']], backgroundColor: CHART_COLORS.RP, borderRadius: 5 }
+                ]
+            };
+            destroyChart('mbiLevelDistributionChart');
+            chartInstances.mbiLevelDistributionChart = new Chart(document.getElementById('mbiLevelDistributionChart'), {
+                type: 'bar', 
+                data: levelData,
+                options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', scales: { x: { beginAtZero: true, stacked: true, grid: { color: '#e0f2fe'} }, y: { stacked: true, grid: { display: false } } }, plugins: { legend: { position: 'top'}}}
+            });
+        }
+
+        function renderClusteringCharts(clusterSummary) {
+            if (clusterSummary.length === 0) {
+                destroyChart('clusterDistributionChart');
+                destroyChart('clusterProfileRadarChart');
+                return;
+            }
+
+            // Cluster Distribution Chart
+            const distributionData = {
+                labels: clusterSummary.map(cl => `Clúster ${cl.clusterNum} (N=${cl.count})`),
+                datasets: [{
+                    label: 'N Individuos',
+                    data: clusterSummary.map(cl => cl.count),
+                    backgroundColor: clusterSummary.map((_, i) => `rgba(${14 + i*40}, ${165 - i*20}, ${233 - i*10}, 0.7)`), // Sky shades
+                    borderColor: clusterSummary.map((_, i) => `rgba(${14 + i*40}, ${165 - i*20}, ${233 - i*10}, 1)`),
+                    borderWidth: 1
+                }]
+            };
+            destroyChart('clusterDistributionChart');
+            chartInstances.clusterDistributionChart = new Chart(document.getElementById('clusterDistributionChart'), {
+                type: 'pie',
+                data: distributionData,
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+            });
+
+            // Cluster Profile Radar Chart
+            const maxScores = { AE: 54, DP: 30, RP: 48 }; 
+            const radarData = {
+                labels: ['AE (Burnout)', 'DP (Burnout)', 'Falta de RP (Burnout)'], // RP inverted for burnout profile
+                datasets: clusterSummary.map((cl, index) => {
+                    // For RP: Higher score is better. For radar, we want "lack of RP" to be high if burnout is high.
+                    // So, if RP score is low (e.g., <=33, problematic), radar value should be high (e.g., 1).
+                    // If RP score is high (e.g., >=40, favorable), radar value should be low (e.g., 0).
+                    let rpLackScore;
+                    if (cl.meanRP <= cutoffs.RP.low) rpLackScore = 1; // High lack of RP
+                    else if (cl.meanRP <= cutoffs.RP.moderate) rpLackScore = 0.5; // Moderate lack of RP
+                    else rpLackScore = 0; // Low lack of RP (favorable)
+
+                    return {
+                        label: `Clúster ${cl.clusterNum}`,
+                        data: [
+                            cl.meanAE / maxScores.AE, // Normalize AE
+                            cl.meanDP / maxScores.DP, // Normalize DP
+                            rpLackScore // Use the calculated "lack of RP" score
+                        ],
+                        fill: true,
+                        backgroundColor: `rgba(${14 + index*50}, ${165 - index*30}, ${233 - index*20}, 0.2)`,
+                        borderColor: `rgb(${14 + index*50}, ${165 - index*30}, ${233 - index*20})`,
+                        pointBackgroundColor: `rgb(${14 + index*50}, ${165 - index*30}, ${233 - index*20})`,
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: `rgb(${14 + index*50}, ${165 - index*30}, ${233 - index*20})`
+                    }
+                })
+            };
+            destroyChart('clusterProfileRadarChart');
+            chartInstances.clusterProfileRadarChart = new Chart(document.getElementById('clusterProfileRadarChart'), {
+                type: 'radar',
+                data: radarData,
+                options: { responsive: true, maintainAspectRatio: false, scales: { r: { beginAtZero: true, max: 1, pointLabels: { font: {size: 10}}, ticks: {stepSize: 0.25}, grid: {color: '#e0f2fe'}}}, elements: { line: { borderWidth: 2 } }, plugins: { legend: { position: 'top', labels: {boxWidth:15, font: {size:10}}}}}
+            });
+        }
+
+
+        // --- K-Means Clustering Logic ---
+        function standardizeDataFeatures(dataArrayOfObjects, features) {
+            const standardized = JSON.parse(JSON.stringify(dataArrayOfObjects)); // Deep copy
+            const n = standardized.length;
+            if (n === 0) return [];
+            features.forEach(feature => {
+                const values = standardized.map(item => item[feature]);
+                const mean = values.reduce((acc, val) => acc + val, 0) / n;
+                const stdDev = Math.sqrt(values.map(val => Math.pow(val - mean, 2)).reduce((acc, val) => acc + val, 0) / (n > 1 ? (n - 1) : 1) ); // Use n-1 for sample std dev
+                if (stdDev === 0) { 
+                    // If stdDev is 0, all values are the same. Standardized value becomes 0.
+                    standardized.forEach(item => { item[feature] = 0; });
+                    return; 
+                }
+                standardized.forEach(item => { item[feature] = (item[feature] - mean) / stdDev; });
+            });
+            return standardized;
+        }
+
+        function euclideanDistance(point1, point2) {
+            let sum = 0;
+            if (!point1 || !point2 || point1.length !== point2.length) return Infinity;
+            for (let i = 0; i < point1.length; i++) sum += Math.pow(point1[i] - point2[i], 2);
+            return Math.sqrt(sum);
+        }
+
+        function simpleKMeans(data, k, maxIterations = 100, seed = 42) { // data is array of arrays of numbers
+            if (!data || data.length === 0) return { error: "Datos de entrada vacíos." };
+            if (data.length < k) return { error: "No hay suficientes puntos de datos para K clústeres." };
+            if (!data[0] || data[0].length === 0) return { error: "Los puntos de datos no tienen dimensiones." };
+
+            let centroids = [];
+            // For reproducible centroid initialization if seed is provided
+            let tempDataForInitialization = JSON.parse(JSON.stringify(data)); 
+            if (seed !== null) {
+                // Simple shuffle based on seed for basic reproducibility
+                const seededRandom = (s) => {
+                    let x = Math.sin(s) * 10000;
+                    return x - Math.floor(x);
+                };
+                tempDataForInitialization.sort((a, b) => seededRandom(seed + data.indexOf(a)) - 0.5);
+                seed++; // Increment seed for subsequent calls if any
+            } else {
+                tempDataForInitialization.sort(() => Math.random() - 0.5); // Random shuffle
+            }
+            centroids = tempDataForInitialization.slice(0, k);
+
+
+            let assignments = new Array(data.length);
+            for (let iter = 0; iter < maxIterations; iter++) {
+                const oldAssignments = [...assignments];
+                // Assignment step
+                for (let i = 0; i < data.length; i++) {
+                    let minDist = Infinity, bestCluster = -1;
+                    for (let j = 0; j < k; j++) {
+                        if (!centroids[j]) continue; // Should not happen if initialized correctly
+                        let dist = euclideanDistance(data[i], centroids[j]);
+                        if (dist < minDist) { minDist = dist; bestCluster = j; }
+                    }
+                    assignments[i] = bestCluster;
+                }
+
+                // Update step
+                let newCentroids = Array(k).fill(null).map(() => Array(data[0].length).fill(0));
+                let counts = Array(k).fill(0);
+                for (let i = 0; i < data.length; i++) {
+                    let clusterIndex = assignments[i];
+                    if (clusterIndex === -1 || clusterIndex === undefined) continue;
+                    counts[clusterIndex]++;
+                    for (let d = 0; d < data[i].length; d++) newCentroids[clusterIndex][d] += data[i][d];
+                }
+
+                for (let j = 0; j < k; j++) {
+                    if (counts[j] > 0) {
+                        for (let d = 0; d < newCentroids[j].length; d++) newCentroids[j][d] /= counts[j];
+                    } else { // Handle empty cluster: re-initialize centroid (e.g., to a random data point)
+                        // This is a simple way to handle it. More robust methods exist.
+                        if (data.length > 0) {
+                            newCentroids[j] = data[Math.floor(Math.random() * data.length)];
+                            console.warn(`Clúster ${j+1} vacío, re-inicializado.`);
+                        } else {
+                             return { error: `Clúster ${j+1} vacío y no hay datos para reasignar.` };
+                        }
+                    }
+                }
+                centroids = newCentroids;
+                // Check for convergence
+                if (iter > 0 && assignments.every((val, idx) => val === oldAssignments[idx])) {
+                    // console.log(`K-Means convergió en ${iter + 1} iteraciones.`);
+                    break;
+                }
+                if (iter === maxIterations -1) console.log("K-Means alcanzó el máximo de iteraciones.");
+            }
+            return { clusters: assignments, centroids };
+        }
+        
+
+        function getProfileInterpretation(aeScore, dpScore, rpScore) {
+            const aeLevelObj = interpretBurnoutLevel('AE', aeScore);
+            const dpLevelObj = interpretBurnoutLevel('DP', dpScore);
+            const rpLevelObj = interpretBurnoutLevel('RP', rpScore); // RP interpretation is inverted
+
+            const ae = aeLevelObj.classKey; // 'low', 'moderate', 'high'
+            const dp = dpLevelObj.classKey; // 'low', 'moderate', 'high'
+            const rp = rpLevelObj.classKey; // 'low' (favorable RP), 'moderate', 'high' (problematic RP)
+
+            if (ae === 'high' && dp === 'high' && rp === 'high') { // High AE, High DP, High problematic RP (low actual RP score)
+                return "Perfil de burnout severo: Alto agotamiento y cinismo, con muy baja realización personal. Requiere atención urgente y especializada.";
+            } else if (ae === 'low' && dp === 'low' && rp === 'low') { // Low AE, Low DP, Low problematic RP (high actual RP score)
+                return "Perfil saludable y comprometido: Bajos niveles de agotamiento y cinismo, con alta realización personal. Indica bienestar y engagement.";
+            } else if (ae === 'high' && dp === 'high') {
+                 return "Agotamiento y cinismo altos: Fuerte indicativo de burnout, independientemente del nivel de RP. Riesgo elevado, posible desmotivación.";
+            } else if (ae === 'high' && rp === 'high') { // High AE, High problematic RP
+                return "Alto agotamiento y baja realización personal: Indica desgaste significativo y falta de logros/sentido, aunque el cinismo pueda variar. Riesgo importante.";
+            } else if (dp === 'high' && rp === 'high') { // High DP, High problematic RP
+                return "Alto cinismo y baja realización personal: Indica desvinculación, actitudes negativas y falta de propósito. El agotamiento puede ser variable pero el riesgo es considerable.";
+            } else if (ae === 'high') {
+                return "Agotamiento emocional elevado: Principalmente desgaste y fatiga emocional. Otros componentes pueden ser moderados o bajos. Riesgo de progresión a burnout más severo.";
+            } else if (dp === 'high') {
+                return "Cinismo elevado: Principalmente desapego, irritabilidad y actitudes negativas hacia el trabajo/usuarios. Otros componentes pueden variar.";
+            } else if (rp === 'high') { // High problematic RP (low actual RP score)
+                return "Baja realización personal: Sentimientos de ineficacia y falta de logro. Factor importante de burnout, incluso si AE y DP son moderados o bajos.";
+            } else if (ae === 'moderate' && dp === 'moderate' && rp === 'moderate') { // Moderate AE, Moderate DP, Moderate problematic RP
+                return "Perfil intermedio/en riesgo: Niveles moderados en todas las dimensiones. Conviene monitorear y aplicar medidas preventivas para evitar el empeoramiento.";
+            } else if (ae === 'moderate' || dp === 'moderate' || rp === 'moderate') {
+                return "Algunos indicadores en nivel moderado: Señales de alerta temprana o burnout leve. Revisar combinación específica para entender el riesgo particular.";
+            }
+            return "Perfil mixto. Analizar los niveles individuales de AE, DP y RP para una comprensión detallada y contextualizada.";
+        }
+
+
+        function analyzeAndDisplayClusters(individualsWithClusters, numClustersRequested) {
+            clusteringResultsTableBody.innerHTML = ''; // Clear previous
+            clusteringResultsOutputSection.classList.add('hidden');
+
+            const clusterSummary = [];
+            // Get unique assigned cluster numbers, excluding 'No asignado' and ensuring they are numbers
+            const assignedClusterNumbers = [...new Set(individualsWithClusters.map(ind => ind.cluster))]
+                                            .filter(cn => typeof cn === 'number' && !isNaN(cn))
+                                            .sort((a,b) => a - b);
+
+
+            for (let k_val of assignedClusterNumbers) {
+                const individualsInClusterK = individualsWithClusters.filter(ind => ind.cluster === k_val);
+                if (individualsInClusterK.length > 0) {
+                    const meanAE = individualsInClusterK.reduce((sum, ind) => sum + ind.AE, 0) / individualsInClusterK.length;
+                    const meanDP = individualsInClusterK.reduce((sum, ind) => sum + ind.DP, 0) / individualsInClusterK.length;
+                    const meanRP = individualsInClusterK.reduce((sum, ind) => sum + ind.RP, 0) / individualsInClusterK.length;
+                    
+                    const aeLevelObjFull = interpretBurnoutLevel('AE', meanAE);
+                    const dpLevelObjFull = interpretBurnoutLevel('DP', meanDP);
+                    const rpLevelObjFull = interpretBurnoutLevel('RP', meanRP);
+                    
+                    const profileInterpretationText = getProfileInterpretation(meanAE, meanDP, meanRP);
+                    
+                    clusterSummary.push({
+                        clusterNum: k_val, // Already a number
+                        count: individualsInClusterK.length,
+                        meanAE: parseFloat(meanAE.toFixed(2)),
+                        meanDP: parseFloat(meanDP.toFixed(2)),
+                        meanRP: parseFloat(meanRP.toFixed(2)),
+                        profile: `AE: ${aeLevelObjFull.level}, DP: ${dpLevelObjFull.level}, RP: ${rpLevelObjFull.level}`,
+                        interpretation: profileInterpretationText
+                    });
+                }
+            }
+            // clusterSummary.sort((a,b) => a.clusterNum - b.clusterNum); // Already sorted if assignedClusterNumbers was sorted
+            
+            if (clusterSummary.length === 0) {
+                clusteringResultsTableBody.innerHTML = '<tr><td colspan="7" class="px-6 py-4 text-center text-mental-text-light">No se generaron clústeres válidos. Verifique sus datos y el número K.</td></tr>';
+                showToast("Análisis de clustering completado, pero no se formaron clústeres válidos.", "warning");
+                return;
+            }
+
+            clusterSummary.forEach(cl => {
+                const row = clusteringResultsTableBody.insertRow();
+                row.className = 'border-b border-mental-border hover:bg-mental-primary-light transition-colors duration-150';
+                row.insertCell().textContent = cl.clusterNum;
+                row.insertCell().textContent = cl.count;
+                row.insertCell().textContent = cl.meanAE;
+                row.insertCell().textContent = cl.meanDP;
+                row.insertCell().textContent = cl.meanRP;
+                row.insertCell().textContent = cl.profile;
+                row.insertCell().textContent = cl.interpretation;
+                Array.from(row.cells).forEach(cell => cell.classList.add('px-6', 'py-4', 'whitespace-nowrap'));
+                row.cells[row.cells.length -2].style.whiteSpace = 'normal'; // Allow profile text wrap
+                row.cells[row.cells.length -2].style.minWidth = '200px';
+                row.cells[row.cells.length -1].style.whiteSpace = 'normal'; // Allow interpretation text wrap
+                row.cells[row.cells.length -1].style.minWidth = '300px';
+                row.cells[row.cells.length -1].classList.add('text-xs', 'leading-tight');
+            });
+            renderClusteringCharts(clusterSummary);
+            clusteringResultsOutputSection.classList.remove('hidden');
+            showToast(`Análisis de clustering completado. Se generaron ${clusterSummary.length} perfiles.`, 'success');
+        }
+
+        // --- PDF Export ---
+        function downloadReportAsPDF() {
+            const reportContent = document.getElementById('reportContent');
+            if (!reportContent) {
+                showToast('No hay contenido para exportar a PDF.', 'error');
+                return;
+            }
+            showToast('Generando PDF... esto puede tardar un momento.', 'info');
+
+            // Temporarily make all content visible for PDF generation if it's hidden
+            const mbiSectionWasHidden = mbiResultsSection.classList.contains('hidden');
+            const clusteringSectionWasHidden = clusteringAnalysisSection.classList.contains('hidden'); // Though this one might not be in reportContent
+            const clusteringResultsWasHidden = clusteringResultsOutputSection.classList.contains('hidden');
+
+            if (mbiSectionWasHidden) mbiResultsSection.classList.remove('hidden');
+            if (clusteringResultsWasHidden) clusteringResultsOutputSection.classList.remove('hidden');
+
+
+            const opt = {
+                margin:       [0.5, 0.5, 0.5, 0.5], // top, left, bottom, right in inches
+                filename:     'MindGuard_Reporte_Analisis.pdf',
+                image:        { type: 'jpeg', quality: 0.95 },
+                html2canvas:  { scale: 2, logging: false, useCORS: true, scrollX: 0, scrollY: 0, windowWidth: reportContent.scrollWidth, windowHeight: reportContent.scrollHeight },
+                jsPDF:        { unit: 'in', format: 'letter', orientation: 'landscape' } // Landscape for wider tables/charts
+            };
+
+            // Add a title to the PDF
+            const pdfTitle = document.createElement('h1');
+            pdfTitle.textContent = 'Informe de Análisis MindGuard';
+            pdfTitle.className = 'text-2xl font-bold text-center my-4 text-mental-primary'; // Tailwind classes for styling
+            reportContent.prepend(pdfTitle);
+
+
+            html2pdf().from(reportContent).set(opt).save().then(() => {
+                showToast('PDF generado y descargado exitosamente.', 'success');
+                // Remove the title after PDF generation
+                pdfTitle.remove();
+                // Restore visibility if sections were hidden
+                if (mbiSectionWasHidden) mbiResultsSection.classList.add('hidden');
+                if (clusteringResultsWasHidden) clusteringResultsOutputSection.classList.add('hidden');
+            }).catch(err => {
+                showToast('Error al generar el PDF: ' + err.message, 'error');
+                console.error("PDF generation error:", err);
+                pdfTitle.remove();
+                if (mbiSectionWasHidden) mbiResultsSection.classList.add('hidden');
+                if (clusteringResultsWasHidden) clusteringResultsOutputSection.classList.add('hidden');
+            });
+        }
+        
+        // --- Table Sorting and Filtering (Basic UI and structure for future JS) ---
+        let sortDirections = {}; // To keep track of sort order for each column
+
+        function sortMbiTable(columnKey) {
+            if (!currentMbiData || currentMbiData.length === 0) return;
+
+            const getSortValue = (item, key) => {
+                if (!item.subscales) return -Infinity; // Push items with errors to the bottom or top
+                switch (key) {
+                    case 'id': return item.id;
+                    case 'ae_score': return item.subscales.AE;
+                    case 'dp_score': return item.subscales.DP;
+                    case 'rp_score': return item.subscales.RP;
+                    case 'ae_level': return item.interpretation.AE.level;
+                    case 'dp_level': return item.interpretation.DP.level;
+                    case 'rp_level': return item.interpretation.RP.level;
+                    default: return '';
+                }
+            };
+
+            const direction = sortDirections[columnKey] === 'asc' ? 'desc' : 'asc';
+            sortDirections[columnKey] = direction;
+
+            // Reset other column indicators
+            document.querySelectorAll('#mbiResultsTableBody th .sort-indicator').forEach(span => span.textContent = '');
+            const currentIndicator = document.querySelector(`#mbiResultsTableBody th button[data-column="${columnKey}"] + .sort-indicator`);
+            if(currentIndicator) currentIndicator.textContent = direction === 'asc' ? ' ▲' : ' ▼';
+
+
+            currentMbiData.sort((a, b) => {
+                let valA = getSortValue(a, columnKey);
+                let valB = getSortValue(b, columnKey);
+
+                if (typeof valA === 'string' && typeof valB === 'string') {
+                    valA = valA.toLowerCase();
+                    valB = valB.toLowerCase();
+                }
+                
+                if (valA < valB) return direction === 'asc' ? -1 : 1;
+                if (valA > valB) return direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+            renderMbiResultsTable(currentMbiData);
+        }
+
+        function filterMbiTable(searchTerm) {
+            const term = searchTerm.toLowerCase();
+            const filteredData = currentMbiData.filter(item => {
+                if (item.id.toLowerCase().includes(term)) return true;
+                if (item.subscales) {
+                    if (String(item.subscales.AE).includes(term) || item.interpretation.AE.level.toLowerCase().includes(term)) return true;
+                    if (String(item.subscales.DP).includes(term) || item.interpretation.DP.level.toLowerCase().includes(term)) return true;
+                    if (String(item.subscales.RP).includes(term) || item.interpretation.RP.level.toLowerCase().includes(term)) return true;
+                }
+                if (item.error && item.error.toLowerCase().includes(term)) return true;
+                return false;
+            });
+            renderMbiResultsTable(filteredData);
+        }
+
+
+        // --- Event Listeners and Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            getDOMElements();
+            document.getElementById('currentYear').textContent = new Date().getFullYear();
+            
+            document.querySelectorAll('.page-link').forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const targetPageId = link.dataset.target || link.getAttribute('href').substring(1);
+                    showPage(targetPageId);
+                    const mobileMenu = document.getElementById('mobile-menu');
+                    if (!mobileMenu.classList.contains('hidden')) {
+                        mobileMenu.classList.add('hidden');
+                        document.querySelector('#mobile-menu-button svg.block').classList.remove('hidden');
+                        document.querySelector('#mobile-menu-button svg.hidden').classList.add('hidden');
+                    }
+                });
+            });
+
+            const mobileMenuButton = document.getElementById('mobile-menu-button');
+            const mobileMenu = document.getElementById('mobile-menu');
+            mobileMenuButton.addEventListener('click', () => {
+                mobileMenu.classList.toggle('hidden');
+                mobileMenuButton.querySelectorAll('svg').forEach(icon => icon.classList.toggle('hidden'));
+            });
+            
+            populateAccordions();
+
+            if (typeof Papa !== 'undefined') {
+                appInitialized = true;
+                updateButtonState('processButton', 'processButtonText', 'processButtonSpinner', 'processButtonIcon', 'Procesar Archivo CSV', false);
+                processButton.disabled = false; // Enable button
+                showToast("Aplicación lista. Selecciona un archivo CSV.", 'success');
+            } else {
+                showToast("Error: Librería PapaParse no cargada. La funcionalidad de carga de CSV está deshabilitada.", 'error');
+                updateButtonState('processButton', 'processButtonText', 'processButtonSpinner', 'processButtonIcon', 'Error de Librería', true);
+            }
+
+            processButton.addEventListener('click', () => {
+                if (!csvFileInput.files.length) {
+                    showToast("Por favor, selecciona un archivo CSV.", 'warning');
+                    return;
+                }
+                currentProcessing = true;
+                updateButtonState('processButton', 'processButtonText', 'processButtonSpinner', 'processButtonIcon', 'Procesando...', true);
+                showToast(`Procesando archivo: ${csvFileInput.files[0].name}...`, 'info');
+
+                Papa.parse(csvFileInput.files[0], {
+                    skipEmptyLines: true,
+                    complete: (results) => {
+                        currentProcessing = false;
+                        updateButtonState('processButton', 'processButtonText', 'processButtonSpinner', 'processButtonIcon', 'Procesar Archivo CSV', false);
+                        if (results.errors.length > 0) {
+                            results.errors.forEach(err => console.error("CSV Parse Error:", err));
+                            showToast("Errores durante el parseo del CSV: " + results.errors.map(e => `${e.type}: ${e.message} (Fila: ${e.row})`).join('; '), 'error', 6000);
+                            return;
+                        }
+                        if (!results.data || results.data.length === 0) {
+                            showToast("El archivo CSV está vacío o no pudo ser parseado.", 'error');
+                            return;
+                        }
+                        processCSVDataInternal(results.data);
+                    },
+                    error: (error) => {
+                        currentProcessing = false;
+                        updateButtonState('processButton', 'processButtonText', 'processButtonSpinner', 'processButtonIcon', 'Procesar Archivo CSV', false);
+                        showToast(`Error al leer el archivo CSV: ${error.message}`, 'error');
+                    }
+                });
+            });
+
+            runClusteringButton.addEventListener('click', () => {
+                currentProcessing = true;
+                updateButtonState('runClusteringButton', 'clusterButtonText', 'clusterButtonSpinner', 'clusterButtonIcon', 'Analizando...', true);
+                showToast(`Iniciando clustering con K=${numClustersInput.value}...`, 'info');
+
+                setTimeout(() => {
+                    try {
+                        const k = parseInt(numClustersInput.value);
+                        if (isNaN(k) || k < 2) {
+                            showToast("Número de clústeres inválido. Debe ser al menos 2.", 'warning');
+                            throw new Error("Invalid K");
+                        }
+                        if (processedMbiDataForClustering.length < k) {
+                            showToast(`No hay suficientes individuos (${processedMbiDataForClustering.length}) para formar ${k} clústeres.`, 'warning');
+                            throw new Error("Not enough data for K");
+                        }
+
+                        const features = ['AE', 'DP', 'RP'];
+                        const standardizedDataObjects = standardizeDataFeatures(processedMbiDataForClustering, features);
+                        const dataForKmeans = standardizedDataObjects.map(item => features.map(f => item[f]));
+
+                        if (dataForKmeans.some(point => point.some(val => isNaN(val) || !isFinite(val)))) {
+                            showToast("Error en estandarización de datos (NaN/Infinity). Revise sus datos de entrada.", 'error');
+                            throw new Error("Standardization error produced NaN/Infinity");
+                        }
+                        
+                        const kmeansResult = simpleKMeans(dataForKmeans, k);
+
+                        if (kmeansResult.error) {
+                             showToast(`Error en K-Means: ${kmeansResult.error}`, 'error');
+                             throw new Error(kmeansResult.error);
+                        }
+                        if (!kmeansResult || !kmeansResult.clusters || kmeansResult.clusters.length !== dataForKmeans.length) {
+                            showToast("Resultado de K-Means inválido o incompleto.", 'error');
+                            throw new Error("Invalid K-Means result structure");
+                        }
+
+                        const individualsWithClusters = processedMbiDataForClustering.map((ind, index) => ({
+                            ...ind, // Original AE, DP, RP scores
+                            cluster: kmeansResult.clusters[index] !== undefined && kmeansResult.clusters[index] !== -1 ? kmeansResult.clusters[index] + 1 : 'No asignado' // +1 because k-means clusters are 0-indexed
+                        }));
+                        analyzeAndDisplayClusters(individualsWithClusters, k);
+
+                    } catch (error) {
+                        console.error("Error en clustering:", error);
+                        showToast(`Error en clustering: ${error.message}`, 'error');
+                    } finally {
+                        currentProcessing = false;
+                        updateButtonState('runClusteringButton', 'clusterButtonText', 'clusterButtonSpinner', 'clusterButtonIcon', 'Realizar Clustering', false);
+                    }
+                }, 50);
+            });
+            
+            const contactForm = document.getElementById('contactForm');
+            if (contactForm) {
+                contactForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const name = document.getElementById('contactName').value;
+                    showToast(`Gracias por tu mensaje, ${name}. (Simulación)`, 'success');
+                    contactForm.reset();
+                });
+            }
+
+            if (downloadPdfButton) {
+                downloadPdfButton.addEventListener('click', downloadReportAsPDF);
+            }
+
+            // Event listeners for MBI table sorting buttons
+            document.querySelectorAll('#mbiResultsSection .sort-button').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const columnKey = e.currentTarget.dataset.column;
+                    sortMbiTable(columnKey);
+                });
+            });
+
+            // Event listener for MBI table filter input
+            const mbiTableFilterInput = document.getElementById('mbiTableFilter');
+            if (mbiTableFilterInput) {
+                mbiTableFilterInput.addEventListener('input', (e) => {
+                    filterMbiTable(e.target.value);
+                });
+            }
+
+
+            const handleInitialPageLoad = () => {
+                const hash = window.location.hash;
+                const targetPageId = hash ? hash.substring(1) : 'inicio';
+                if (document.getElementById(`${targetPageId}-page`)) {
+                    showPage(targetPageId);
+                } else {
+                    showPage('inicio');
+                }
+            };
+
+            handleInitialPageLoad();
+            window.addEventListener('hashchange', handleInitialPageLoad);
+
+        });
+    </script>
+</body>
+</html>
